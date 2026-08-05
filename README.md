@@ -38,6 +38,12 @@ language situation description and enroll a user-specific sound with three phone
 microphone examples plus background calibration. See
 [`docs/PROFILE_AGENT_AND_ENROLLMENT.md`](docs/PROFILE_AGENT_AND_ENROLLMENT.md).
 
+The **My context** tab adds a private, manually controlled identity and context
+bank. Users can enroll their name and pronunciation, add people and life context,
+and synchronize those approved hints to local speech inference. QuietCue does not
+generate or suggest memories from background conversations. See
+[`docs/IDENTITY_AND_MEMORY.md`](docs/IDENTITY_AND_MEMORY.md).
+
 ## First model: environmental sound classification
 
 The first working inference slice uses Google's pretrained YAMNet model. It takes

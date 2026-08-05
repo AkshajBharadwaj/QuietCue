@@ -149,7 +149,10 @@ class ProfileRepository(private val context: Context) {
         val profilesByBuiltIn = decoded.filter { it.builtIn != null }.associateBy { it.builtIn }
         val completedBuiltIns = ProfileDefaults.all().map { default ->
             val storedProfile = profilesByBuiltIn[default.builtIn] ?: default
-            storedProfile.copy(soundRules = ProfileDefaults.completeRules(storedProfile.soundRules, soundLibrary))
+            storedProfile.copy(
+                phraseTriggers = storedProfile.phraseTriggers.filterNot { it.equals("my name", ignoreCase = true) },
+                soundRules = ProfileDefaults.completeRules(storedProfile.soundRules, soundLibrary),
+            )
         }
         return completedBuiltIns + decoded.filter { it.builtIn == null }.map { profile ->
             profile.copy(soundRules = ProfileDefaults.completeRules(profile.soundRules, soundLibrary))

@@ -1,6 +1,7 @@
 package com.quietcue.app.data
 
 import com.quietcue.app.domain.DetectedAlert
+import com.quietcue.app.domain.MemoryBank
 import com.quietcue.app.domain.RuntimeState
 import com.quietcue.app.domain.ProfileCatalog
 import java.net.HttpURLConnection
@@ -12,8 +13,8 @@ import org.json.JSONObject
 class AlertRepository(
     private val stateUrl: String = "http://127.0.0.1:8787/api/state",
 ) {
-    suspend fun syncProfile(catalog: ProfileCatalog) = withContext(Dispatchers.IO) {
-        val document = ProfileSyncJsonCodec.encode(catalog).toByteArray(Charsets.UTF_8)
+    suspend fun syncProfile(catalog: ProfileCatalog, memoryBank: MemoryBank = MemoryBank()) = withContext(Dispatchers.IO) {
+        val document = ProfileSyncJsonCodec.encode(catalog, memoryBank).toByteArray(Charsets.UTF_8)
         val connection = URL(stateUrl).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "PUT"

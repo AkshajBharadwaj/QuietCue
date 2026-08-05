@@ -15,7 +15,13 @@ from typing import Protocol
 class SpeechTranscriber(Protocol):
     """Interface for a local Whisper/ASR implementation on a capable hub."""
 
-    def transcribe_pcm16(self, pcm: bytes, sample_rate: int) -> "Transcript | None": ...
+    def transcribe_pcm16(
+        self,
+        pcm: bytes,
+        sample_rate: int,
+        prompt: str = "",
+        hotwords: list[str] | None = None,
+    ) -> "Transcript | None": ...
 
 
 @dataclass(frozen=True)
@@ -34,7 +40,13 @@ class PhraseMatch:
 class DisabledTranscriber:
     """Explicit placeholder until a local ASR runtime is selected and measured."""
 
-    def transcribe_pcm16(self, pcm: bytes, sample_rate: int) -> Transcript | None:
+    def transcribe_pcm16(
+        self,
+        pcm: bytes,
+        sample_rate: int,
+        prompt: str = "",
+        hotwords: list[str] | None = None,
+    ) -> Transcript | None:
         return None
 
 
@@ -58,7 +70,13 @@ class FasterWhisperTranscriber:
         self._model: object | None = None
         self._model_lock = threading.Lock()
 
-    def transcribe_pcm16(self, pcm: bytes, sample_rate: int) -> Transcript | None:
+    def transcribe_pcm16(
+        self,
+        pcm: bytes,
+        sample_rate: int,
+        prompt: str = "",
+        hotwords: list[str] | None = None,
+    ) -> Transcript | None:
         if sample_rate != 16_000:
             raise ValueError("Faster-Whisper input must be 16 kHz")
         if len(pcm) < 2 or len(pcm) % 2:
@@ -78,6 +96,8 @@ class FasterWhisperTranscriber:
             beam_size=1,
             condition_on_previous_text=False,
             vad_filter=False,
+            initial_prompt=prompt or None,
+            hotwords=", ".join(hotwords or []) or None,
         )
         completed = list(segments)
         text = " ".join(segment.text.strip() for segment in completed if segment.text.strip()).strip()
@@ -181,6 +201,8 @@ class BufferedSpeechRecognizer:
         sample_rate: int,
         voice_detected: bool,
         phrase_triggers: list[str],
+        prompt: str = "",
+        hotwords: list[str] | None = None,
     ) -> tuple[SpeechRecognition | None, bool]:
         if sample_rate != 16_000:
             raise ValueError("Speech buffering currently requires 16 kHz audio")
@@ -198,7 +220,7 @@ class BufferedSpeechRecognizer:
             utterance_ended and duration_ms >= self.end_of_utterance_ms
         )
         if self._future is None and should_submit and phrase_triggers:
-            self._submit(sample_rate, phrase_triggers)
+            self._submit(sample_rate, phrase_triggers, prompt, hotwords or [])
         elif utterance_ended and duration_ms < self.end_of_utterance_ms:
             self._buffer.clear()
         self._was_voice = voice_detected
@@ -217,7 +239,13 @@ class BufferedSpeechRecognizer:
             self._future = None
         self._was_voice = False
 
-    def _submit(self, sample_rate: int, phrase_triggers: list[str]) -> None:
+    def _submit(
+        self,
+        sample_rate: int,
+        phrase_triggers: list[str],
+        prompt: str,
+        hotwords: list[str],
+    ) -> None:
         audio = bytes(self._buffer)
         overlap_bytes = _bytes_for_ms(sample_rate, self.overlap_ms)
         self._buffer = bytearray(self._buffer[-overlap_bytes:]) if overlap_bytes else bytearray()
@@ -227,6 +255,8 @@ class BufferedSpeechRecognizer:
             audio,
             sample_rate,
             list(phrase_triggers),
+            prompt,
+            list(hotwords),
         )
 
     def _take_completed(self) -> SpeechRecognition | None:
@@ -250,9 +280,11 @@ def _recognize(
     pcm: bytes,
     sample_rate: int,
     phrase_triggers: list[str],
+    prompt: str,
+    hotwords: list[str],
 ) -> SpeechRecognition:
     started = time.perf_counter()
-    transcript = transcriber.transcribe_pcm16(pcm, sample_rate)
+    transcript = transcriber.transcribe_pcm16(pcm, sample_rate, prompt, hotwords)
     inference_ms = (time.perf_counter() - started) * 1_000
     phrase_match = find_phrase_match(transcript, phrase_triggers) if transcript is not None else None
     return SpeechRecognition(

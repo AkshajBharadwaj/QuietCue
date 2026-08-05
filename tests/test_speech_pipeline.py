@@ -24,9 +24,19 @@ class _FixedTranscriber:
     def __init__(self, text: str) -> None:
         self.text = text
         self.calls = 0
+        self.prompt = ""
+        self.hotwords: list[str] = []
 
-    def transcribe_pcm16(self, pcm: bytes, sample_rate: int) -> Transcript:
+    def transcribe_pcm16(
+        self,
+        pcm: bytes,
+        sample_rate: int,
+        prompt: str = "",
+        hotwords: list[str] | None = None,
+    ) -> Transcript:
         self.calls += 1
+        self.prompt = prompt
+        self.hotwords = hotwords or []
         return Transcript(self.text, 0.91)
 
 
@@ -57,9 +67,37 @@ class SpeechPipelineTest(unittest.TestCase):
         self.assertEqual(completed.phrase_match.phrase, "Akshaj")
         self.assertEqual(transcriber.calls, 1)
 
+    def test_context_prompt_and_hotwords_reach_transcriber(self) -> None:
+        transcriber = _FixedTranscriber("Hey Akshaj")
+        recognizer = BufferedSpeechRecognizer(
+            transcriber,
+            min_audio_ms=1_000,
+            executor=_InlineExecutor(),
+        )
+        pcm = b"\x00\x01" * 16_000
+
+        recognizer.update(
+            pcm,
+            16_000,
+            True,
+            ["Akshaj"],
+            "The user's name is Akshaj.",
+            ["Akshaj", "Maya"],
+        )
+        recognizer.update(pcm[:16_000], 16_000, False, ["Akshaj"])
+
+        self.assertEqual(transcriber.prompt, "The user's name is Akshaj.")
+        self.assertEqual(transcriber.hotwords, ["Akshaj", "Maya"])
+
     def test_transcriber_failure_is_metadata_not_a_pipeline_exception(self) -> None:
         class FailingTranscriber:
-            def transcribe_pcm16(self, pcm: bytes, sample_rate: int) -> Transcript:
+            def transcribe_pcm16(
+                self,
+                pcm: bytes,
+                sample_rate: int,
+                prompt: str = "",
+                hotwords: list[str] | None = None,
+            ) -> Transcript:
                 raise RuntimeError("model unavailable")
 
         recognizer = BufferedSpeechRecognizer(

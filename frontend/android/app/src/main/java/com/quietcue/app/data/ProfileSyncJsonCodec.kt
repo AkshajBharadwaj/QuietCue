@@ -1,17 +1,19 @@
 package com.quietcue.app.data
 
+import com.quietcue.app.domain.MemoryBank
 import com.quietcue.app.domain.ProfileCatalog
 import org.json.JSONArray
 import org.json.JSONObject
 
 object ProfileSyncJsonCodec {
-    fun encode(catalog: ProfileCatalog): String {
+    fun encode(catalog: ProfileCatalog, memoryBank: MemoryBank = MemoryBank()): String {
         val profile = requireNotNull(catalog.activeProfile)
         val soundsById = catalog.soundLibrary.associateBy { it.id }
         return JSONObject()
             .put("id", profile.id)
             .put("name", profile.name)
             .put("phrase_triggers", JSONArray(profile.phraseTriggers))
+            .put("speech_context", encodeSpeechContext(memoryBank))
             .put(
                 "quiet_hours",
                 JSONObject()
@@ -56,4 +58,43 @@ object ProfileSyncJsonCodec {
             )
             .toString()
     }
+
+    private fun encodeSpeechContext(bank: MemoryBank): JSONObject = JSONObject()
+        .put(
+            "identity",
+            bank.identity?.let { identity ->
+                JSONObject()
+                    .put("name", identity.displayName)
+                    .put("pronunciation", identity.pronunciation)
+                    .put("aliases", JSONArray(identity.aliases))
+                    .put("recognition_phrases", JSONArray(identity.recognitionPhrases))
+            },
+        )
+        .put(
+            "people",
+            JSONArray().apply {
+                bank.people.forEach { person ->
+                    put(
+                        JSONObject()
+                            .put("name", person.name)
+                            .put("relationship", person.relationship)
+                            .put("pronunciation", person.pronunciation)
+                            .put("aliases", JSONArray(person.aliases))
+                            .put("notes", person.notes),
+                    )
+                }
+            },
+        )
+        .put(
+            "contexts",
+            JSONArray().apply {
+                bank.contexts.forEach { context ->
+                    put(
+                        JSONObject()
+                            .put("title", context.title)
+                            .put("details", context.details),
+                    )
+                }
+            },
+        )
 }

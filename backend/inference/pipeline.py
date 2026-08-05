@@ -87,6 +87,8 @@ class HubInferencePipeline:
         sample_rate: int,
         edge_analysis: dict[str, object] | None = None,
         phrase_triggers: list[str] | None = None,
+        speech_prompt: str = "",
+        speech_hotwords: list[str] | None = None,
     ) -> HubInferenceResult:
         if sample_rate != 16_000:
             raise ValueError("Hub baseline currently requires 16 kHz audio")
@@ -117,6 +119,8 @@ class HubInferencePipeline:
                 sample_rate,
                 voice_detected,
                 phrase_triggers or [],
+                speech_prompt,
+                speech_hotwords or [],
             )
             if recognition is not None:
                 speech_inference_ms = recognition.inference_ms

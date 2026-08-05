@@ -2,6 +2,7 @@ package com.quietcue.app.ui
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -28,6 +29,7 @@ import com.quietcue.app.domain.ProfileDefaults
 private enum class MainTab(val label: String) {
     HOME("Home"),
     PROFILES("Profiles"),
+    MEMORY("My context"),
 }
 
 private enum class CreationFlow {
@@ -35,10 +37,17 @@ private enum class CreationFlow {
     SOUND_ENROLLMENT,
 }
 
+private enum class MemoryEditorFlow {
+    IDENTITY,
+    PERSON,
+    CONTEXT,
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuietCueApp(viewModel: ProfileViewModel) {
     val catalog by viewModel.catalog.collectAsStateWithLifecycle()
+    val memoryBank by viewModel.memoryBank.collectAsStateWithLifecycle()
     val runtimeState by viewModel.runtimeState.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -46,7 +55,10 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
     val selectedTab = MainTab.valueOf(selectedTabName)
     var editorProfileJson by rememberSaveable { mutableStateOf<String?>(null) }
     var creationFlowName by rememberSaveable { mutableStateOf<String?>(null) }
+    var memoryEditorFlowName by rememberSaveable { mutableStateOf<String?>(null) }
+    var memoryEditorItemId by rememberSaveable { mutableStateOf<String?>(null) }
     val creationFlow = creationFlowName?.let(CreationFlow::valueOf)
+    val memoryEditorFlow = memoryEditorFlowName?.let(MemoryEditorFlow::valueOf)
     val editorProfile = editorProfileJson?.let {
         runCatching { ProfileJsonCodec.decode(it).firstOrNull() }.getOrNull()
     }
@@ -97,6 +109,52 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
         return
     }
 
+
+    if (memoryEditorFlow == MemoryEditorFlow.IDENTITY) {
+        IdentityEnrollmentScreen(
+            initial = memoryBank.identity,
+            recognizeSample = viewModel::recognizeNameSample,
+            onBack = { memoryEditorFlowName = null },
+            onSave = {
+                viewModel.saveIdentity(it)
+                memoryEditorFlowName = null
+            },
+        )
+        return
+    }
+
+    if (memoryEditorFlow == MemoryEditorFlow.PERSON) {
+        PersonMemoryEditorScreen(
+            initial = memoryBank.people.firstOrNull { it.id == memoryEditorItemId },
+            onBack = {
+                memoryEditorFlowName = null
+                memoryEditorItemId = null
+            },
+            onSave = {
+                viewModel.savePerson(it)
+                memoryEditorFlowName = null
+                memoryEditorItemId = null
+            },
+        )
+        return
+    }
+
+    if (memoryEditorFlow == MemoryEditorFlow.CONTEXT) {
+        ContextMemoryEditorScreen(
+            initial = memoryBank.contexts.firstOrNull { it.id == memoryEditorItemId },
+            onBack = {
+                memoryEditorFlowName = null
+                memoryEditorItemId = null
+            },
+            onSave = {
+                viewModel.saveContext(it)
+                memoryEditorFlowName = null
+                memoryEditorItemId = null
+            },
+        )
+        return
+    }
+
     Scaffold(
         topBar = { TopAppBar(title = { Text("QuietCue") }) },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -113,6 +171,12 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                     onClick = { selectedTabName = MainTab.PROFILES.name },
                     icon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
                     label = { Text(MainTab.PROFILES.label) },
+                )
+                NavigationBarItem(
+                    selected = selectedTab == MainTab.MEMORY,
+                    onClick = { selectedTabName = MainTab.MEMORY.name },
+                    icon = { Icon(Icons.Rounded.AccountCircle, contentDescription = null) },
+                    label = { Text(MainTab.MEMORY.label) },
                 )
             }
         },
@@ -154,6 +218,23 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                 onGenerateFromText = { creationFlowName = CreationFlow.PROFILE_AGENT.name },
                 onEnrollSound = { creationFlowName = CreationFlow.SOUND_ENROLLMENT.name },
                 onDeleteSound = viewModel::deleteEnrolledSound,
+            )
+            MainTab.MEMORY -> MemoryBankScreen(
+                bank = memoryBank,
+                contentPadding = contentPadding,
+                onEditIdentity = { memoryEditorFlowName = MemoryEditorFlow.IDENTITY.name },
+                onEditPerson = { person ->
+                    memoryEditorItemId = person?.id
+                    memoryEditorFlowName = MemoryEditorFlow.PERSON.name
+                },
+                onDeletePerson = viewModel::deletePerson,
+                onEditContext = { context ->
+                    memoryEditorItemId = context?.id
+                    memoryEditorFlowName = MemoryEditorFlow.CONTEXT.name
+                },
+                onDeleteContext = viewModel::deleteContext,
+                onDeleteIdentity = viewModel::deleteIdentity,
+                onClearAll = viewModel::clearMemoryBank,
             )
         }
     }

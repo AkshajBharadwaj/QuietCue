@@ -76,7 +76,6 @@ object ProfileDefaults {
         builtIn = BuiltInProfile.HOME,
         icon = ProfileIcon.HOME,
         color = ProfileColor.TEAL,
-        phraseTriggers = listOf("my name"),
         soundRules = rules(
             disabled = setOf(SoundType.CAR_HORN),
             overrides = mapOf(
@@ -99,7 +98,6 @@ object ProfileDefaults {
         icon = ProfileIcon.WORK,
         color = ProfileColor.OCEAN,
         activation = ActivationRule(activity = ActivityContext.WORK_SCHOOL),
-        phraseTriggers = listOf("my name"),
         soundRules = rules(
             disabled = setOf(SoundType.BABY_CRYING, SoundType.KITCHEN_TIMER),
             overrides = mapOf(
@@ -151,7 +149,6 @@ object ProfileDefaults {
         color = ProfileColor.VIOLET,
         quietHours = QuietHours(enabled = true, startMinutes = 22 * 60, endMinutes = 7 * 60),
         activation = ActivationRule(activity = ActivityContext.SLEEPING),
-        phraseTriggers = listOf("my name"),
         soundRules = rules(
             disabled = setOf(
                 SoundType.DOORBELL_KNOCK,

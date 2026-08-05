@@ -43,7 +43,6 @@ def _home() -> AlertProfile:
         "Home",
         disabled={"car_horn"},
         thresholds={"doorbell_knock": 0.55, "baby_crying": 0.50},
-        phrase_triggers=("my name",),
     )
 
 
@@ -53,7 +52,6 @@ def _work() -> AlertProfile:
         "Work / School",
         disabled={"baby_crying", "kitchen_timer"},
         thresholds={"name_called": 0.48, "phone_ringing": 0.65},
-        phrase_triggers=("my name",),
         overrides={"phone_ringing": {"category": "informational", "pattern": "short_pulse"}},
     )
 
@@ -82,7 +80,6 @@ def _sleep() -> AlertProfile:
         "Sleep / Night",
         disabled={"doorbell_knock", "car_horn", "kitchen_timer", "phone_ringing"},
         thresholds={"baby_crying": 0.42},
-        phrase_triggers=("my name",),
         quiet_hours=QuietHours(True, 22 * 60, 7 * 60),
         overrides={
             "baby_crying": {

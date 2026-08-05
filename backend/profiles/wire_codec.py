@@ -11,6 +11,7 @@ from backend.profiles.engine import (
     QuietHours,
     SoundRule,
 )
+from backend.profiles.speech_context import KnownPerson, ManualContext, SpeechContext, UserIdentity
 
 
 _CATEGORIES = {"informational", "attention", "emergency"}
@@ -22,6 +23,7 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
     profile_id = _required_text(document, "id", 80)
     name = _required_text(document, "name", 40)
     phrase_triggers = _text_list(document.get("phrase_triggers", []), 40, 20)
+    speech_context = _decode_speech_context(document.get("speech_context", {}))
     quiet_document = document.get("quiet_hours", {})
     if not isinstance(quiet_document, dict):
         raise ValueError("quiet_hours must be an object")
@@ -93,7 +95,64 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
         quiet_hours=quiet_hours,
         sound_rules=tuple(rules),
         custom_sounds=tuple(custom_sounds),
+        speech_context=speech_context,
     )
+
+
+def _decode_speech_context(value: Any) -> SpeechContext:
+    if value is None:
+        return SpeechContext()
+    if not isinstance(value, dict):
+        raise ValueError("speech_context must be an object")
+
+    identity_document = value.get("identity")
+    identity = None
+    if identity_document is not None:
+        if not isinstance(identity_document, dict):
+            raise ValueError("speech_context.identity must be an object")
+        identity = UserIdentity(
+            name=_required_text(identity_document, "name", 60),
+            pronunciation=_optional_text(identity_document, "pronunciation", 80),
+            aliases=_bounded_text_list(identity_document.get("aliases", []), 10, 60, "identity aliases"),
+            recognition_phrases=_bounded_text_list(
+                identity_document.get("recognition_phrases", []),
+                5,
+                100,
+                "recognition phrases",
+            ),
+        )
+
+    people_document = value.get("people", [])
+    if not isinstance(people_document, list) or len(people_document) > 50:
+        raise ValueError("speech_context.people must contain at most 50 entries")
+    people: list[KnownPerson] = []
+    for item in people_document:
+        if not isinstance(item, dict):
+            raise ValueError("Each known person must be an object")
+        people.append(
+            KnownPerson(
+                name=_required_text(item, "name", 60),
+                relationship=_optional_text(item, "relationship", 80),
+                pronunciation=_optional_text(item, "pronunciation", 80),
+                aliases=_bounded_text_list(item.get("aliases", []), 10, 60, "person aliases"),
+                notes=_optional_text(item, "notes", 280),
+            )
+        )
+
+    contexts_document = value.get("contexts", [])
+    if not isinstance(contexts_document, list) or len(contexts_document) > 50:
+        raise ValueError("speech_context.contexts must contain at most 50 entries")
+    contexts: list[ManualContext] = []
+    for item in contexts_document:
+        if not isinstance(item, dict):
+            raise ValueError("Each manual context must be an object")
+        contexts.append(
+            ManualContext(
+                title=_required_text(item, "title", 80),
+                details=_required_text(item, "details", 500),
+            )
+        )
+    return SpeechContext(identity=identity, people=tuple(people), contexts=tuple(contexts))
 
 
 def _required_text(document: dict[str, Any], key: str, maximum: int) -> str:
@@ -101,6 +160,31 @@ def _required_text(document: dict[str, Any], key: str, maximum: int) -> str:
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > maximum:
         raise ValueError(f"{key} must be between 1 and {maximum} characters")
     return value.strip()
+
+
+def _optional_text(document: dict[str, Any], key: str, maximum: int) -> str:
+    value = document.get(key, "")
+    if not isinstance(value, str) or len(value.strip()) > maximum:
+        raise ValueError(f"{key} must be at most {maximum} characters")
+    return value.strip()
+
+
+def _bounded_text_list(
+    value: Any,
+    maximum_items: int,
+    maximum_length: int,
+    label: str,
+) -> tuple[str, ...]:
+    if not isinstance(value, list) or len(value) > maximum_items:
+        raise ValueError(f"{label} must be a bounded list")
+    result = tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
+    if (
+        len(result) != len(value)
+        or any(len(item) > maximum_length for item in result)
+        or len({item.casefold() for item in result}) != len(result)
+    ):
+        raise ValueError(f"{label} contains an invalid value")
+    return result
 
 
 def _text_list(value: Any, maximum_length: int, maximum_items: int) -> tuple[str, ...]:

@@ -5,15 +5,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quietcue.app.data.AlertRepository
+import com.quietcue.app.data.MemoryRepository
+import com.quietcue.app.data.OnDeviceNameRecognizer
 import com.quietcue.app.data.ProfileRepository
 import com.quietcue.app.data.PhoneEnrollmentRecorder
 import com.quietcue.app.data.ProfileSyncJsonCodec
 import com.quietcue.app.domain.AlertProfile
+import com.quietcue.app.domain.ContextMemory
+import com.quietcue.app.domain.MemoryBank
+import com.quietcue.app.domain.PersonMemory
 import com.quietcue.app.domain.ProfileCatalog
 import com.quietcue.app.domain.ProfileDefaults
 import com.quietcue.app.domain.RuntimeState
 import com.quietcue.app.domain.CapturedFingerprint
 import com.quietcue.app.domain.SoundDefinition
+import com.quietcue.app.domain.UserIdentity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,11 +32,19 @@ class ProfileViewModel(
     private val repository: ProfileRepository,
     private val alertRepository: AlertRepository,
     private val enrollmentRecorder: PhoneEnrollmentRecorder,
+    private val memoryRepository: MemoryRepository,
+    private val nameRecognizer: OnDeviceNameRecognizer,
 ) : ViewModel() {
     val catalog: StateFlow<ProfileCatalog> = repository.catalog.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = ProfileCatalog(ProfileDefaults.all(), ProfileDefaults.HOME_ID),
+    )
+
+    val memoryBank: StateFlow<MemoryBank> = memoryRepository.bank.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = MemoryBank(),
     )
 
     private val _message = MutableStateFlow<String?>(null)
@@ -47,9 +61,12 @@ class ProfileViewModel(
                     .onSuccess { state ->
                         _runtimeState.value = state
                         val currentCatalog = catalog.value
-                        val payload = runCatching { ProfileSyncJsonCodec.encode(currentCatalog) }.getOrNull()
+                        val currentMemoryBank = memoryBank.value
+                        val payload = runCatching {
+                            ProfileSyncJsonCodec.encode(currentCatalog, currentMemoryBank)
+                        }.getOrNull()
                         if (payload != null && payload != lastSyncedProfile) {
-                            runCatching { alertRepository.syncProfile(currentCatalog) }
+                            runCatching { alertRepository.syncProfile(currentCatalog, currentMemoryBank) }
                                 .onSuccess { lastSyncedProfile = payload }
                                 .onFailure { lastSyncedProfile = null }
                         }
@@ -89,8 +106,32 @@ class ProfileViewModel(
         repository.deleteEnrolledSound(soundId)
     }
 
+    fun saveIdentity(identity: UserIdentity) = runAction("Name enrollment saved") {
+        memoryRepository.saveIdentity(identity)
+    }
+
+    fun deleteIdentity() = runAction("Name enrollment removed") { memoryRepository.deleteIdentity() }
+
+    fun savePerson(person: PersonMemory) = runAction("Person saved") { memoryRepository.savePerson(person) }
+
+    fun deletePerson(personId: String) = runAction("Person removed") {
+        memoryRepository.deletePerson(personId)
+    }
+
+    fun saveContext(context: ContextMemory) = runAction("Context saved") {
+        memoryRepository.saveContext(context)
+    }
+
+    fun deleteContext(contextId: String) = runAction("Context removed") {
+        memoryRepository.deleteContext(contextId)
+    }
+
+    fun clearMemoryBank() = runAction("Private memory bank deleted") { memoryRepository.clearAll() }
+
     suspend fun recordEnrollmentFingerprint(): CapturedFingerprint =
         enrollmentRecorder.recordFingerprint()
+
+    suspend fun recognizeNameSample(): String = nameRecognizer.recognize()
 
     fun clearMessage() {
         _message.value = null
@@ -113,6 +154,8 @@ class ProfileViewModel(
                     ProfileRepository(context.applicationContext),
                     AlertRepository(),
                     PhoneEnrollmentRecorder(),
+                    MemoryRepository(context.applicationContext),
+                    OnDeviceNameRecognizer(context.applicationContext),
                 ) as T
             }
         }

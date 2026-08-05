@@ -150,12 +150,20 @@ class QuietCueHubServer:
         async with self._pipeline_lock:
             if self._pipeline is None:
                 self._pipeline = await asyncio.to_thread(self._pipeline_factory)
+            profile = self._decision_engine.profile
+            speech_context = profile.speech_context
             inference = await asyncio.to_thread(
                 self._pipeline.process_pcm16,
                 message.payload,
                 sample_rate,
                 body.get("edge_analysis") if isinstance(body.get("edge_analysis"), dict) else None,
-                list(dict.fromkeys([*self._decision_engine.profile.phrase_triggers, *phrase_triggers])),
+                list(
+                    dict.fromkeys(
+                        [*profile.phrase_triggers, *speech_context.identity_triggers(), *phrase_triggers]
+                    )
+                ),
+                speech_context.prompt(),
+                list(speech_context.hotwords()),
             )
             custom_events = await asyncio.to_thread(
                 self._custom_matcher.match_pcm16,
@@ -257,10 +265,13 @@ async def serve(
         custom_matcher.set_prototypes(updated.custom_sounds)
         state_store.set_profile(updated)
         LOGGER.info(
-            "Active profile synchronized: %s (%d rules, %d enrolled sounds)",
+            "Active profile synchronized: %s (%d rules, %d enrolled sounds, identity=%s, %d people, %d contexts)",
             updated.name,
             len(updated.sound_rules),
             len(updated.custom_sounds),
+            "yes" if updated.speech_context.identity is not None else "no",
+            len(updated.speech_context.people),
+            len(updated.speech_context.contexts),
         )
         return {"status": "updated", "active_profile": updated.summary()}
 

@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 
 from backend.inference.pipeline import ConfirmedEvent
+from backend.profiles.speech_context import SpeechContext
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class AlertProfile:
     quiet_hours: QuietHours
     sound_rules: tuple[SoundRule, ...]
     custom_sounds: tuple[CustomSoundPrototype, ...] = ()
+    speech_context: SpeechContext = SpeechContext()
 
     def rule_for(self, event: str) -> SoundRule | None:
         return next((rule for rule in self.sound_rules if rule.event == event), None)
