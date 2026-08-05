@@ -34,6 +34,7 @@ private enum class MainTab(val label: String) {
 @Composable
 fun QuietCueApp(viewModel: ProfileViewModel) {
     val catalog by viewModel.catalog.collectAsStateWithLifecycle()
+    val runtimeState by viewModel.runtimeState.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTabName by rememberSaveable { mutableStateOf(MainTab.HOME.name) }
@@ -95,7 +96,11 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
         },
     ) { contentPadding ->
         when (selectedTab) {
-            MainTab.HOME -> DashboardScreen(catalog = catalog, contentPadding = contentPadding)
+            MainTab.HOME -> DashboardScreen(
+                catalog = catalog,
+                runtimeState = runtimeState,
+                contentPadding = contentPadding,
+            )
             MainTab.PROFILES -> ProfilesScreen(
                 catalog = catalog,
                 contentPadding = contentPadding,

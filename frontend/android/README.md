@@ -15,10 +15,12 @@ does not sit in the safety-critical sound-to-haptic path.
 - Optional activity and location labels for future automatic profile activation.
 - Built-in profile reset and custom profile deletion.
 - Local validation and unit tests for defaults, times, and persistence encoding.
+- Read-only local hub status, latest event, confidence, latency, backend profile,
+  and simulated haptic output on the dashboard.
 
-The dashboard currently shows the Snapdragon PC and Uno Q as disconnected. Live
-status, event history, profile synchronization, and haptic preview will be added
-with the backend API; local profile editing already works without that connection.
+The dashboard polls the development backend at `http://127.0.0.1:8787/api/state`.
+Profile synchronization, full event history, and haptic preview remain future
+work; local profile editing continues to work without a backend connection.
 
 ## Requirements
 
@@ -45,5 +47,14 @@ Install a debug build on a connected device with:
 ./gradlew installDebug
 ```
 
-No microphone or network permission is requested in this first slice. Audio
-capture remains on the Uno Q as required by the QuietCue architecture.
+For the local development state feed on a physical phone or emulator, forward the
+backend port before opening the app:
+
+```bash
+adb reverse tcp:8787 tcp:8787
+```
+
+The app requests network permission only for this local metadata feed. It does not
+capture audio; audio capture remains on the Uno Q in the final architecture. See
+[`../../docs/NO_HARDWARE_DEMO.md`](../../docs/NO_HARDWARE_DEMO.md) for the complete
+microphone-free workflow.

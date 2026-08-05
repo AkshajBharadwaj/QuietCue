@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Hearing
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Watch
 import androidx.compose.material3.Card
@@ -30,9 +31,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.quietcue.app.domain.ProfileCatalog
+import com.quietcue.app.domain.RuntimeState
 
 @Composable
-fun DashboardScreen(catalog: ProfileCatalog, contentPadding: PaddingValues) {
+fun DashboardScreen(
+    catalog: ProfileCatalog,
+    runtimeState: RuntimeState,
+    contentPadding: PaddingValues,
+) {
     val profile = catalog.activeProfile
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -90,8 +96,26 @@ fun DashboardScreen(catalog: ProfileCatalog, contentPadding: PaddingValues) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatusRow(Icons.Rounded.Hearing, "Phone app", "Profile controls available", true)
-                StatusRow(Icons.Rounded.CloudOff, "Snapdragon PC", "Not connected yet", false)
-                StatusRow(Icons.Rounded.Watch, "Uno Q wearable", "Not connected yet", false)
+                StatusRow(
+                    Icons.Rounded.CloudOff,
+                    "Inference hub",
+                    if (runtimeState.backendConnected) {
+                        "Connected • ${runtimeState.backendProfileName ?: "Profile unavailable"}"
+                    } else {
+                        "Run the local QuietCue hub"
+                    },
+                    runtimeState.backendConnected,
+                )
+                StatusRow(
+                    Icons.Rounded.Watch,
+                    "Audio source",
+                    if (runtimeState.audioSourceConnected) {
+                        "WAV replay or Uno Q stream connected"
+                    } else {
+                        "Waiting for replay or microphone stream"
+                    },
+                    runtimeState.audioSourceConnected,
+                )
             }
         }
 
@@ -103,18 +127,36 @@ fun DashboardScreen(catalog: ProfileCatalog, contentPadding: PaddingValues) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
+                    val alert = runtimeState.latestAlert
                     Icon(
-                        Icons.Rounded.NotificationsNone,
+                        if (alert == null) Icons.Rounded.NotificationsNone else Icons.Rounded.NotificationsActive,
                         contentDescription = null,
                         modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (alert == null) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
                     )
-                    Column {
-                        Text("No alerts yet", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "Detected sounds, confidence, latency, and acknowledgement will appear here.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        if (alert == null) {
+                            Text("No alerts yet", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Replay a WAV to show confidence, latency, and haptic output here.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            Text(alert.displayName, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "${(alert.confidence * 100).toInt()}% • ${alert.category.replaceFirstChar(Char::uppercase)} • ${alert.profileName}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "${alert.totalLatencyMs} ms • ${alert.pattern.replace('_', ' ')}" +
+                                    if (alert.simulated) " • simulated haptic" else "",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }

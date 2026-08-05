@@ -1,3 +1,13 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# TensorFlow downloads pretrained models here when configured locally.
+.model-cache/
+
 # Android / Gradle
 .gradle/
 **/build/
