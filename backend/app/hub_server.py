@@ -15,7 +15,7 @@ from pathlib import Path
 from backend.app.status_server import StatusHttpServer
 from backend.communication.stream_protocol import ProtocolError, WireMessage, read_message, write_message
 from backend.inference.custom_sound_matcher import CustomSoundMatcher
-from backend.inference.pipeline import HubInferencePipeline, HubInferenceResult
+from backend.inference.pipeline import HubInferencePipeline, HubInferenceResult, SoundClassifier
 from backend.profiles.defaults import all_profiles, get_profile
 from backend.profiles.engine import DecisionResult, ProfileDecisionEngine
 from backend.profiles.wire_codec import decode_profile
@@ -64,6 +64,8 @@ class QuietCueHubServer:
                     WireMessage("error", {"code": "pairing_failed", "message": "Invalid pairing token"}),
                 )
                 return
+
+            await self._reset_pipeline_stream()
 
             await write_message(
                 writer,
@@ -171,17 +173,47 @@ class QuietCueHubServer:
         self._state_store.record(sequence, inference, decisions)
         return inference, decisions
 
+    async def close(self) -> None:
+        async with self._pipeline_lock:
+            pipeline, self._pipeline = self._pipeline, None
+        if pipeline is not None:
+            await asyncio.to_thread(pipeline.close)
 
-def _pipeline_factory(classifier: str) -> Callable[[], HubInferencePipeline]:
+    async def _reset_pipeline_stream(self) -> None:
+        async with self._pipeline_lock:
+            if self._pipeline is not None:
+                self._pipeline.reset_stream()
+
+
+def _pipeline_factory(
+    classifier: str,
+    speech_model: str,
+    speech_device: str,
+    speech_compute_type: str,
+    speech_language: str,
+) -> Callable[[], HubInferencePipeline]:
+    def build(sound_classifier: SoundClassifier) -> HubInferencePipeline:
+        transcriber = None
+        if speech_model:
+            from backend.inference.speech import FasterWhisperTranscriber
+
+            transcriber = FasterWhisperTranscriber(
+                speech_model,
+                device=speech_device,
+                compute_type=speech_compute_type,
+                language=None if speech_language == "auto" else speech_language,
+            )
+        return HubInferencePipeline(sound_classifier, transcriber)
+
     if classifier == "demo":
         from backend.inference.demo_classifier import DemoToneSoundClassifier
 
-        return lambda: HubInferencePipeline(DemoToneSoundClassifier())
+        return lambda: build(DemoToneSoundClassifier())
     if classifier == "yamnet":
         def create_yamnet() -> HubInferencePipeline:
             from backend.inference.sound_classifier import YamnetSoundClassifier
 
-            return HubInferencePipeline(YamnetSoundClassifier())
+            return build(YamnetSoundClassifier())
 
         return create_yamnet
     raise ValueError(f"Unknown classifier: {classifier}")
@@ -196,13 +228,23 @@ async def serve(
     classifier: str,
     profile_id: str,
     event_log: Path | None,
+    speech_model: str,
+    speech_device: str,
+    speech_compute_type: str,
+    speech_language: str,
 ) -> None:
     profile = get_profile(profile_id)
     state_store = AlertStateStore(profile, jsonl_path=event_log)
     decision_engine = ProfileDecisionEngine(profile)
     custom_matcher = CustomSoundMatcher(profile.custom_sounds)
     hub = QuietCueHubServer(
-        _pipeline_factory(classifier),
+        _pipeline_factory(
+            classifier,
+            speech_model,
+            speech_device,
+            speech_compute_type,
+            speech_language,
+        ),
         decision_engine,
         state_store,
         custom_matcher,
@@ -230,8 +272,17 @@ async def serve(
     LOGGER.info("QuietCue audio hub listening on %s", audio_addresses)
     LOGGER.info("Android state API listening on %s", state_addresses)
     LOGGER.info("Classifier=%s profile=%s", classifier, profile.name)
-    async with audio_server, state_server:
-        await asyncio.gather(audio_server.serve_forever(), state_server.serve_forever())
+    LOGGER.info(
+        "Speech model=%s device=%s compute=%s",
+        speech_model or "disabled",
+        speech_device,
+        speech_compute_type,
+    )
+    try:
+        async with audio_server, state_server:
+            await asyncio.gather(audio_server.serve_forever(), state_server.serve_forever())
+    finally:
+        await hub.close()
 
 
 def _parse_args() -> argparse.Namespace:
@@ -242,6 +293,26 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--state-port", type=int, default=DEFAULT_STATE_PORT)
     parser.add_argument("--classifier", choices=("demo", "yamnet"), default="yamnet")
     parser.add_argument("--profile", choices=tuple(all_profiles()), default="home")
+    parser.add_argument(
+        "--speech-model",
+        default=os.environ.get("QUIETCUE_SPEECH_MODEL", ""),
+        help="Optional local Faster-Whisper model name/path, for example tiny.en",
+    )
+    parser.add_argument(
+        "--speech-device",
+        default=os.environ.get("QUIETCUE_SPEECH_DEVICE", "cpu"),
+        help="Faster-Whisper execution device (default: cpu)",
+    )
+    parser.add_argument(
+        "--speech-compute-type",
+        default=os.environ.get("QUIETCUE_SPEECH_COMPUTE_TYPE", "int8"),
+        help="Faster-Whisper compute type (default: int8)",
+    )
+    parser.add_argument(
+        "--speech-language",
+        default=os.environ.get("QUIETCUE_SPEECH_LANGUAGE", "en"),
+        help="Speech language code or auto (default: en)",
+    )
     parser.add_argument(
         "--event-log",
         type=Path,
@@ -271,6 +342,10 @@ def main() -> None:
                 args.classifier,
                 args.profile,
                 args.event_log,
+                args.speech_model.strip(),
+                args.speech_device,
+                args.speech_compute_type,
+                args.speech_language,
             )
         )
     except KeyboardInterrupt:

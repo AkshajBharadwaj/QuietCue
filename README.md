@@ -3,7 +3,19 @@
 QuietCue is an AI-assisted accessibility system that turns important environmental
 sounds into clear haptic alerts for deaf and hard-of-hearing users.
 
-## Develop without the Uno Q microphone
+## Live Uno Q microphone
+
+The Uno Q can now capture a USB/ALSA microphone continuously, perform lightweight
+voice and loudness analysis, and stream 16 kHz mono PCM16 chunks to exactly one
+inference hub. The hub has an optional gated Faster-Whisper speech path for
+configured names and phrases; it runs in the background so environmental
+classification does not wait for transcription.
+
+See [`docs/UNO_Q_MICROPHONE.md`](docs/UNO_Q_MICROPHONE.md) for microphone
+detection, level checks, live streaming, local speech-model setup, privacy, and
+the current Copilot-versus-Samsung routing boundary.
+
+## Develop without connected hardware
 
 The current development loop can replay a validated 16 kHz mono PCM16 WAV through
 the same chunked TCP protocol the Uno Q microphone adapter will use later. A

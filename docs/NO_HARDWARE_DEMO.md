@@ -79,9 +79,9 @@ latest alert, confidence, backend profile, processing latency, and simulated
 haptic pattern. The audio-source status only stays green while replay is actively
 connected; the last alert remains visible afterward.
 
-The backend profile is currently selected by the hub's `--profile` argument. The
-Android profile editor remains local to the phone until profile synchronization is
-implemented, so keep the two selections aligned manually during this milestone.
+The backend starts with the profile selected by `--profile`. When the Android app
+is connected through the state API, it automatically synchronizes its active
+profile, phrase triggers, rules, and enrolled sound fingerprints to the hub.
 
 ## Replay a real recording
 

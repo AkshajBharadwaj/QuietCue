@@ -8,7 +8,11 @@ from typing import Protocol
 
 from backend.inference.event_mapper import MappedEvent, map_predictions
 from backend.inference.models import SoundPrediction
-from backend.inference.speech import DisabledTranscriber, SpeechTranscriber, find_phrase_match
+from backend.inference.speech import (
+    BufferedSpeechRecognizer,
+    SpeechTranscriber,
+    find_phrase_match,
+)
 
 
 class SoundClassifier(Protocol):
@@ -36,6 +40,9 @@ class HubInferenceResult:
     voice_detected: bool
     speech_confidence: float
     transcript: str | None
+    speech_pending: bool
+    speech_inference_ms: float | None
+    speech_error: str | None
     inference_ms: float
     total_ms: float
     top_predictions: tuple[dict[str, object], ...]
@@ -46,6 +53,9 @@ class HubInferenceResult:
             "voice_detected": self.voice_detected,
             "speech_confidence": self.speech_confidence,
             "transcript": self.transcript,
+            "speech_pending": self.speech_pending,
+            "speech_inference_ms": self.speech_inference_ms,
+            "speech_error": self.speech_error,
             "inference_ms": self.inference_ms,
             "total_ms": self.total_ms,
             "top_predictions": list(self.top_predictions),
@@ -61,7 +71,15 @@ class HubInferencePipeline:
         transcriber: SpeechTranscriber | None = None,
     ) -> None:
         self.classifier = classifier
-        self.transcriber = transcriber or DisabledTranscriber()
+        self.speech_recognizer = BufferedSpeechRecognizer(transcriber) if transcriber else None
+
+    def close(self) -> None:
+        if self.speech_recognizer is not None:
+            self.speech_recognizer.close()
+
+    def reset_stream(self) -> None:
+        if self.speech_recognizer is not None:
+            self.speech_recognizer.reset()
 
     def process_pcm16(
         self,
@@ -81,15 +99,35 @@ class HubInferencePipeline:
         inference_ms = (time.perf_counter() - inference_started) * 1_000
         mapping = map_predictions(predictions)
 
-        edge_voice = bool((edge_analysis or {}).get("voice_activity", False))
-        voice_detected = edge_voice or mapping.speech_confidence >= 0.10
+        edge_document = edge_analysis or {}
+        edge_voice = bool(edge_document.get("voice_activity", False))
+        edge_probability = edge_document.get("voice_probability", 0.0)
+        if isinstance(edge_probability, bool) or not isinstance(edge_probability, (int, float)):
+            edge_probability = 0.0
+        speech_confidence = max(mapping.speech_confidence, float(edge_probability))
+        voice_detected = edge_voice or speech_confidence >= 0.10
         transcript = None
+        speech_pending = False
+        speech_inference_ms = None
+        speech_error = None
         events = [_confirmed_event(event) for event in mapping.events]
-        if voice_detected and phrase_triggers:
-            transcript_result = self.transcriber.transcribe_pcm16(pcm, sample_rate)
-            if transcript_result is not None:
-                transcript = transcript_result.text
-                phrase_match = find_phrase_match(transcript_result, phrase_triggers)
+        if self.speech_recognizer is not None:
+            recognition, speech_pending = self.speech_recognizer.update(
+                pcm,
+                sample_rate,
+                voice_detected,
+                phrase_triggers or [],
+            )
+            if recognition is not None:
+                speech_inference_ms = recognition.inference_ms
+                speech_error = recognition.error
+                if recognition.transcript is not None:
+                    transcript = recognition.transcript.text
+                phrase_match = (
+                    find_phrase_match(recognition.transcript, phrase_triggers or [])
+                    if recognition.transcript is not None
+                    else None
+                )
                 if phrase_match is not None:
                     events.append(
                         ConfirmedEvent(
@@ -113,8 +151,11 @@ class HubInferencePipeline:
         return HubInferenceResult(
             events=tuple(events),
             voice_detected=voice_detected,
-            speech_confidence=round(mapping.speech_confidence, 4),
+            speech_confidence=round(speech_confidence, 4),
             transcript=transcript,
+            speech_pending=speech_pending,
+            speech_inference_ms=speech_inference_ms,
+            speech_error=speech_error,
             inference_ms=round(inference_ms, 2),
             total_ms=round(total_ms, 2),
             top_predictions=top_predictions,

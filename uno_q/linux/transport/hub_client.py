@@ -1,4 +1,4 @@
-"""Uno Q WAV-stream client used before live microphone capture is connected."""
+"""Stream Uno Q microphone audio or deterministic WAV replay to one inference hub."""
 
 from __future__ import annotations
 
@@ -6,11 +6,17 @@ import argparse
 import asyncio
 import json
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from backend.audio.wav_source import SAMPLE_RATE, iter_wav_chunks
+from backend.audio.wav_source import SAMPLE_RATE, AudioChunk, iter_wav_chunks
 from backend.communication.stream_protocol import WireMessage, read_message, write_message
+from uno_q.linux.audio_capture.alsa_source import (
+    DEFAULT_ALSA_DEVICE,
+    AlsaPcmSource,
+    list_capture_hardware,
+)
 from uno_q.linux.audio_capture.edge_analyzer import EdgeAudioAnalyzer
 from uno_q.linux.transport.hub_selector import (
     HubCandidate,
@@ -61,15 +67,15 @@ async def probe(endpoint: Endpoint, device_id: str, pairing_token: str) -> HubCa
         return None
 
 
-async def stream_wav(
-    path: Path,
+async def stream_chunks(
+    chunks: Iterable[AudioChunk],
     endpoints: list[Endpoint],
     preference: RoutingPreference,
     device_id: str,
     pairing_token: str,
     phrase_triggers: list[str],
-    chunk_ms: int,
-    realtime: bool,
+    *,
+    compact: bool = False,
 ) -> None:
     candidates = await asyncio.gather(
         *(probe(endpoint, device_id, pairing_token) for endpoint in endpoints)
@@ -84,7 +90,7 @@ async def stream_wav(
 
     if lease is None:
         print("No eligible hub is connected; showing Uno Q edge candidates only.")
-        _print_edge_only(path, chunk_ms, analyzer)
+        _print_edge_only(chunks, analyzer, compact)
         return
 
     selected = lease.candidate
@@ -105,7 +111,7 @@ async def stream_wav(
         if hello.kind != "hub_hello":
             raise RuntimeError(f"Hub rejected session: {hello.body}")
 
-        for chunk in iter_wav_chunks(path, chunk_ms=chunk_ms, realtime=realtime):
+        for chunk in chunks:
             edge = analyzer.analyze_pcm16(chunk.pcm)
             await write_message(
                 writer,
@@ -120,20 +126,97 @@ async def stream_wav(
                 ),
             )
             response = await read_message(reader)
-            print(json.dumps(response.body, indent=2))
+            _print_result(chunk, edge.to_wire(), response.body, compact)
     finally:
         writer.close()
         await writer.wait_closed()
 
 
-def _print_edge_only(path: Path, chunk_ms: int, analyzer: EdgeAudioAnalyzer) -> None:
-    for chunk in iter_wav_chunks(path, chunk_ms=chunk_ms):
-        print(
-            json.dumps(
-                {**chunk.to_wire(), "edge_analysis": analyzer.analyze_pcm16(chunk.pcm).to_wire()},
-                indent=2,
-            )
+async def stream_wav(
+    path: Path,
+    endpoints: list[Endpoint],
+    preference: RoutingPreference,
+    device_id: str,
+    pairing_token: str,
+    phrase_triggers: list[str],
+    chunk_ms: int,
+    realtime: bool,
+    compact: bool = False,
+) -> None:
+    await stream_chunks(
+        iter_wav_chunks(path, chunk_ms=chunk_ms, realtime=realtime),
+        endpoints,
+        preference,
+        device_id,
+        pairing_token,
+        phrase_triggers,
+        compact=compact,
+    )
+
+
+async def stream_microphone(
+    alsa_device: str,
+    endpoints: list[Endpoint],
+    preference: RoutingPreference,
+    device_id: str,
+    pairing_token: str,
+    phrase_triggers: list[str],
+    chunk_ms: int,
+    max_chunks: int | None,
+    compact: bool,
+) -> None:
+    source = AlsaPcmSource(alsa_device, chunk_ms=chunk_ms)
+    print(
+        f"Capturing {SAMPLE_RATE} Hz mono PCM16 from {alsa_device} "
+        f"in {chunk_ms} ms chunks; raw audio is not stored."
+    )
+    with source:
+        await stream_chunks(
+            source.iter_chunks(max_chunks=max_chunks),
+            endpoints,
+            preference,
+            device_id,
+            pairing_token,
+            phrase_triggers,
+            compact=compact,
         )
+
+
+def _print_edge_only(
+    chunks: Iterable[AudioChunk],
+    analyzer: EdgeAudioAnalyzer,
+    compact: bool,
+) -> None:
+    for chunk in chunks:
+        edge = analyzer.analyze_pcm16(chunk.pcm).to_wire()
+        if compact:
+            print(
+                f"seq={chunk.sequence} rms={edge['rms_dbfs']}dBFS "
+                f"peak={edge['peak_dbfs']}dBFS voice={edge['voice_activity']}"
+            )
+        else:
+            print(json.dumps({**chunk.to_wire(), "edge_analysis": edge}, indent=2))
+
+
+def _print_result(
+    chunk: AudioChunk,
+    edge: dict[str, object],
+    response: dict[str, object],
+    compact: bool,
+) -> None:
+    if not compact:
+        print(json.dumps(response, indent=2))
+        return
+    events = response.get("events", [])
+    alerts = response.get("alerts", [])
+    event_names = [str(item.get("event")) for item in events if isinstance(item, dict)]
+    alert_names = [str(item.get("event")) for item in alerts if isinstance(item, dict)]
+    transcript = response.get("transcript")
+    print(
+        f"seq={chunk.sequence} rms={edge['rms_dbfs']}dBFS voice={response.get('voice_detected', False)} "
+        f"events={event_names or '-'} alerts={alert_names or '-'}"
+        + (f" transcript={transcript!r}" if transcript else "")
+    )
 
 
 def _endpoint(value: str, kind: HubKind, node_id: str) -> Endpoint:
@@ -144,8 +227,23 @@ def _endpoint(value: str, kind: HubKind, node_id: str) -> Endpoint:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Stream a WAV from Uno Q to the selected hub")
-    parser.add_argument("wav_file", type=Path)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("wav_file", type=Path, nargs="?", help="Validated WAV replay source")
+    parser.add_argument(
+        "--microphone",
+        action="store_true",
+        help="Capture continuously from an ALSA microphone instead of replaying a WAV",
+    )
+    parser.add_argument(
+        "--input-device",
+        default=DEFAULT_ALSA_DEVICE,
+        help=f"ALSA capture device (default: {DEFAULT_ALSA_DEVICE})",
+    )
+    parser.add_argument(
+        "--list-microphones",
+        action="store_true",
+        help="List ALSA capture hardware and exit",
+    )
     parser.add_argument("--pc", help="Copilot hub as HOST:PORT")
     parser.add_argument("--phone", help="Samsung hub as HOST:PORT")
     parser.add_argument(
@@ -157,6 +255,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--pairing-token", default="")
     parser.add_argument("--phrase", action="append", default=[])
     parser.add_argument("--chunk-ms", type=int, default=500)
+    parser.add_argument(
+        "--max-chunks",
+        type=int,
+        help="Stop after this many chunks; useful for a microphone health check",
+    )
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="Print one health/result line per chunk instead of full JSON",
+    )
     parser.add_argument(
         "--realtime",
         action="store_true",
@@ -171,23 +279,46 @@ def _now_ms() -> int:
 
 def main() -> None:
     args = _parse_args()
+    if args.list_microphones:
+        print(list_capture_hardware())
+        return
+    if args.microphone == (args.wav_file is not None):
+        raise SystemExit("Choose exactly one source: WAV_FILE or --microphone")
+    if args.max_chunks is not None and args.max_chunks < 1:
+        raise SystemExit("--max-chunks must be positive")
     endpoints: list[Endpoint] = []
     if args.pc:
         endpoints.append(_endpoint(args.pc, HubKind.COPILOT_PC, "configured-pc"))
     if args.phone:
         endpoints.append(_endpoint(args.phone, HubKind.SAMSUNG_PHONE, "configured-phone"))
-    asyncio.run(
-        stream_wav(
-            args.wav_file,
-            endpoints,
-            RoutingPreference(args.preference),
-            args.device_id,
-            args.pairing_token,
-            args.phrase,
-            args.chunk_ms,
-            args.realtime,
+    if args.microphone:
+        asyncio.run(
+            stream_microphone(
+                args.input_device,
+                endpoints,
+                RoutingPreference(args.preference),
+                args.device_id,
+                args.pairing_token,
+                args.phrase,
+                args.chunk_ms,
+                args.max_chunks,
+                args.compact,
+            )
         )
-    )
+    else:
+        asyncio.run(
+            stream_wav(
+                args.wav_file,
+                endpoints,
+                RoutingPreference(args.preference),
+                args.device_id,
+                args.pairing_token,
+                args.phrase,
+                args.chunk_ms,
+                args.realtime,
+                args.compact,
+            )
+        )
 
 
 if __name__ == "__main__":

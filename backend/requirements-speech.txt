@@ -1,0 +1,3 @@
+# Optional gated speech-to-text baseline. Environmental inference does not
+# depend on this file and continues if the speech runtime is unavailable.
+faster-whisper==1.2.1
