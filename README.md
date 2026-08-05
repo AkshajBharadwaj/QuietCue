@@ -21,6 +21,11 @@ This mode is a deterministic simulator, not a real safety classifier. See
 display the alert on an attached Android phone, change profiles, or substitute a
 real prerecorded sound for the synthetic fixture.
 
+The Android companion can also create a reviewable profile draft from a natural-
+language situation description and enroll a user-specific sound with three phone-
+microphone examples plus background calibration. See
+[`docs/PROFILE_AGENT_AND_ENROLLMENT.md`](docs/PROFILE_AGENT_AND_ENROLLMENT.md).
+
 ## First model: environmental sound classification
 
 The first working inference slice uses Google's pretrained YAMNet model. It takes

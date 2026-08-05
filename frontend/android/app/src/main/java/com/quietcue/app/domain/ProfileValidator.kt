@@ -1,12 +1,15 @@
 package com.quietcue.app.domain
 
 object ProfileValidator {
-    fun validate(profile: AlertProfile): List<String> = buildList {
+    fun validate(
+        profile: AlertProfile,
+        soundLibrary: List<SoundDefinition> = SoundLibrary.builtIns(),
+    ): List<String> = buildList {
         if (profile.name.isBlank()) add("Give the profile a name.")
         if (profile.name.trim().length > 40) add("Keep the profile name to 40 characters or fewer.")
         if (profile.description.length > 120) add("Keep the description to 120 characters or fewer.")
         if (profile.soundRules.none(SoundRule::enabled)) add("Enable at least one sound.")
-        if (profile.soundRules.map(SoundRule::sound).toSet().size != SoundType.entries.size) {
+        if (profile.soundRules.map(SoundRule::soundId).toSet() != soundLibrary.map(SoundDefinition::id).toSet()) {
             add("The profile must contain one rule for every supported sound.")
         }
         if (profile.soundRules.any { it.confidenceThreshold !in 0.20f..0.95f }) {

@@ -41,9 +41,32 @@ object ProfileDefaults {
         builtIn = null,
     )
 
-    fun completeRules(rules: List<SoundRule>): List<SoundRule> {
-        val rulesBySound = rules.associateBy(SoundRule::sound)
-        return SoundType.entries.map { sound -> rulesBySound[sound] ?: baseRule(sound) }
+    fun completeRules(
+        rules: List<SoundRule>,
+        soundLibrary: List<SoundDefinition> = SoundLibrary.builtIns(),
+    ): List<SoundRule> {
+        val rulesBySound = rules.associateBy(SoundRule::soundId)
+        return soundLibrary.map { sound ->
+            rulesBySound[sound.id] ?: ruleForSound(sound, enabled = sound.builtInType != null)
+        }
+    }
+
+    fun ruleForSound(sound: SoundDefinition, enabled: Boolean = false): SoundRule = SoundRule(
+        soundId = sound.id,
+        enabled = enabled,
+        confidenceThreshold = sound.enrollment?.similarityThreshold
+            ?: if (sound.defaultPriority == AlertPriority.EMERGENCY) 0.45f else 0.60f,
+        priority = sound.defaultPriority,
+        hapticPattern = sound.defaultHapticPattern,
+        hapticStrength = sound.defaultHapticStrength,
+        requiresAcknowledgement = sound.defaultRequiresAcknowledgement,
+        cooldownSeconds = if (sound.defaultPriority == AlertPriority.EMERGENCY) 10 else 20,
+    )
+
+    fun fallbackRule(soundId: String): SoundRule {
+        val definition = SoundLibrary.builtIns().firstOrNull { it.id == soundId }
+            ?: SoundDefinition(soundId, "Custom sound", "Enrolled custom sound")
+        return ruleForSound(definition, enabled = definition.builtInType != null)
     }
 
     private fun home(): AlertProfile = AlertProfile(
@@ -198,7 +221,7 @@ object ProfileDefaults {
     private fun baseRule(sound: SoundType): SoundRule {
         val emergency = sound == SoundType.FIRE_ALARM || sound == SoundType.SIREN
         return SoundRule(
-            sound = sound,
+            soundId = sound.id,
             enabled = true,
             confidenceThreshold = if (emergency) 0.45f else 0.60f,
             priority = if (emergency) AlertPriority.EMERGENCY else AlertPriority.ATTENTION,

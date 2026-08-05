@@ -29,6 +29,9 @@ class AlertStateStore:
     def disconnected(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
 
+    def set_profile(self, profile: AlertProfile) -> None:
+        self._profile = profile
+
     def record(
         self,
         sequence: int,

@@ -67,6 +67,7 @@ import com.quietcue.app.domain.ProfileIcon
 import com.quietcue.app.domain.ProfileValidator
 import com.quietcue.app.domain.QuietHours
 import com.quietcue.app.domain.SoundRule
+import com.quietcue.app.domain.SoundDefinition
 import com.quietcue.app.domain.formatTime
 import com.quietcue.app.domain.parseTime
 import kotlin.math.roundToInt
@@ -75,6 +76,7 @@ import kotlin.math.roundToInt
 @Composable
 fun ProfileEditorScreen(
     initialProfile: AlertProfile,
+    soundLibrary: List<SoundDefinition>,
     onBack: () -> Unit,
     onSave: (AlertProfile) -> Unit,
 ) {
@@ -97,7 +99,7 @@ fun ProfileEditorScreen(
     val profileForSave = if (parsedStart != null && parsedEnd != null) {
         draft.copy(quietHours = draft.quietHours.copy(startMinutes = parsedStart, endMinutes = parsedEnd))
     } else draft
-    val validationErrors = ProfileValidator.validate(profileForSave) + buildList {
+    val validationErrors = ProfileValidator.validate(profileForSave, soundLibrary) + buildList {
         if (draft.quietHours.enabled && parsedStart == null) add("Use a valid quiet-hours start time, such as 10:00 PM.")
         if (draft.quietHours.enabled && parsedEnd == null) add("Use a valid quiet-hours end time, such as 7:00 AM.")
     }
@@ -310,15 +312,17 @@ fun ProfileEditorScreen(
                 }
             }
 
-            items(count = draft.soundRules.size, key = { draft.soundRules[it].sound.name }) { index ->
+            items(count = draft.soundRules.size, key = { draft.soundRules[it].soundId }) { index ->
                 val rule = draft.soundRules[index]
+                val sound = soundLibrary.firstOrNull { it.id == rule.soundId } ?: return@items
                 SoundRuleCard(
                     rule = rule,
+                    sound = sound,
                     onChange = { updatedRule ->
                         updateDraft(
                             draft.copy(
                                 soundRules = draft.soundRules.map {
-                                    if (it.sound == updatedRule.sound) updatedRule else it
+                                    if (it.soundId == updatedRule.soundId) updatedRule else it
                                 },
                             ),
                         )
@@ -397,8 +401,12 @@ private fun SwitchRow(
 }
 
 @Composable
-private fun SoundRuleCard(rule: SoundRule, onChange: (SoundRule) -> Unit) {
-    var expanded by rememberSaveable(rule.sound.name) { mutableStateOf(false) }
+private fun SoundRuleCard(
+    rule: SoundRule,
+    sound: SoundDefinition,
+    onChange: (SoundRule) -> Unit,
+) {
+    var expanded by rememberSaveable(rule.soundId) { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(
             containerColor = if (rule.enabled) MaterialTheme.colorScheme.surfaceContainer
@@ -409,8 +417,8 @@ private fun SoundRuleCard(rule: SoundRule, onChange: (SoundRule) -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(rule.sound.displayName, style = MaterialTheme.typography.titleMedium)
-                        if (rule.sound.safetyCritical) {
+                        Text(sound.displayName, style = MaterialTheme.typography.titleMedium)
+                        if (sound.safetyCritical) {
                             Text(
                                 "SAFETY",
                                 color = MaterialTheme.colorScheme.error,
@@ -419,7 +427,7 @@ private fun SoundRuleCard(rule: SoundRule, onChange: (SoundRule) -> Unit) {
                             )
                         }
                     }
-                    Text(rule.sound.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(sound.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(
                     checked = rule.enabled,
@@ -437,8 +445,8 @@ private fun SoundRuleCard(rule: SoundRule, onChange: (SoundRule) -> Unit) {
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(
                         if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                        contentDescription = if (expanded) "Hide ${rule.sound.displayName} settings"
-                        else "Show ${rule.sound.displayName} settings",
+                        contentDescription = if (expanded) "Hide ${sound.displayName} settings"
+                        else "Show ${sound.displayName} settings",
                     )
                 }
             }

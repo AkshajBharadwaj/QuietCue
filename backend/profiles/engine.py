@@ -30,12 +30,22 @@ class SoundRule:
 
 
 @dataclass(frozen=True)
+class CustomSoundPrototype:
+    event: str
+    label: str
+    prototype: tuple[float, ...]
+    similarity_threshold: float
+    matcher_version: int = 1
+
+
+@dataclass(frozen=True)
 class AlertProfile:
     profile_id: str
     name: str
     phrase_triggers: tuple[str, ...]
     quiet_hours: QuietHours
     sound_rules: tuple[SoundRule, ...]
+    custom_sounds: tuple[CustomSoundPrototype, ...] = ()
 
     def rule_for(self, event: str) -> SoundRule | None:
         return next((rule for rule in self.sound_rules if rule.event == event), None)
@@ -91,6 +101,10 @@ class ProfileDecisionEngine:
     def __init__(self, profile: AlertProfile) -> None:
         self.profile = profile
         self._last_alert_ms: dict[str, int] = {}
+
+    def set_profile(self, profile: AlertProfile) -> None:
+        self.profile = profile
+        self._last_alert_ms.clear()
 
     def decide(
         self,

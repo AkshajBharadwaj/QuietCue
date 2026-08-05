@@ -13,9 +13,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material3.AlertDialog
@@ -42,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.quietcue.app.domain.AlertProfile
 import com.quietcue.app.domain.ProfileCatalog
+import com.quietcue.app.domain.SoundDefinition
 
 @Composable
 fun ProfilesScreen(
@@ -52,8 +55,12 @@ fun ProfilesScreen(
     onDuplicate: (AlertProfile) -> Unit,
     onDelete: (String) -> Unit,
     onReset: (String) -> Unit,
+    onGenerateFromText: () -> Unit,
+    onEnrollSound: () -> Unit,
+    onDeleteSound: (String) -> Unit,
 ) {
     var deleteCandidate by remember { mutableStateOf<AlertProfile?>(null) }
+    var soundDeleteCandidate by remember { mutableStateOf<SoundDefinition?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -71,6 +78,53 @@ fun ProfilesScreen(
                 "Choose what QuietCue listens for and how each alert should feel.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("Create for a new situation", style = MaterialTheme.typography.titleLarge)
+                    Text("Describe an unfamiliar place or teach QuietCue a sound unique to you.")
+                    Button(onClick = onGenerateFromText, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
+                        Text(" Describe a situation")
+                    }
+                    OutlinedButton(onClick = onEnrollSound, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Rounded.GraphicEq, contentDescription = null)
+                        Text(" Enroll a sound")
+                    }
+                }
+            }
+        }
+
+        val enrolledSounds = catalog.soundLibrary.filter(SoundDefinition::isEnrolled)
+        if (enrolledSounds.isNotEmpty()) {
+            item { SectionTitle("Enrolled sounds") }
+            items(count = enrolledSounds.size, key = { enrolledSounds[it].id }) { index ->
+                val sound = enrolledSounds[index]
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(Icons.Rounded.GraphicEq, contentDescription = null)
+                        Column(Modifier.weight(1f)) {
+                            Text(sound.displayName, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "${sound.enrollment?.positiveSampleCount ?: 0} examples • experimental local match",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { soundDeleteCandidate = sound }) {
+                            Icon(Icons.Rounded.Delete, contentDescription = "Delete ${sound.displayName}")
+                        }
+                    }
+                }
+            }
         }
 
         item { SectionTitle("Built-in") }
@@ -123,6 +177,27 @@ fun ProfilesScreen(
             },
             dismissButton = {
                 TextButton(onClick = { deleteCandidate = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    soundDeleteCandidate?.let { sound ->
+        AlertDialog(
+            onDismissRequest = { soundDeleteCandidate = null },
+            title = { Text("Delete ${sound.displayName}?") },
+            text = {
+                Text("Its acoustic fingerprint and alert rule will be removed from every profile. This cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteSound(sound.id)
+                        soundDeleteCandidate = null
+                    },
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { soundDeleteCandidate = null }) { Text("Cancel") }
             },
         )
     }

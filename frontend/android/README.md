@@ -17,10 +17,16 @@ does not sit in the safety-critical sound-to-haptic path.
 - Local validation and unit tests for defaults, times, and persistence encoding.
 - Read-only local hub status, latest event, confidence, latency, backend profile,
   and simulated haptic output on the dashboard.
+- A constrained local profile assistant that turns a situation description into
+  a complete draft for explicit user review.
+- Custom sound enrollment using three two-second examples, one background sample,
+  and an acoustic fingerprint that discards raw audio immediately.
+- Active-profile and enrolled-fingerprint synchronization to the local hub.
 
 The dashboard polls the development backend at `http://127.0.0.1:8787/api/state`.
-Profile synchronization, full event history, and haptic preview remain future
-work; local profile editing continues to work without a backend connection.
+Full event history and haptic preview remain future work; local profile editing,
+profile drafting, and enrollment storage continue to work without a backend
+connection. Recognition of an enrolled sound requires the hub connection.
 
 ## Requirements
 
@@ -54,7 +60,13 @@ backend port before opening the app:
 adb reverse tcp:8787 tcp:8787
 ```
 
-The app requests network permission only for this local metadata feed. It does not
-capture audio; audio capture remains on the Uno Q in the final architecture. See
+The app requests network permission for local metadata/profile synchronization and
+microphone permission only while the user explicitly records enrollment examples.
+Continuous monitoring audio remains on the Uno Q in the final architecture. See
 [`../../docs/NO_HARDWARE_DEMO.md`](../../docs/NO_HARDWARE_DEMO.md) for the complete
 microphone-free workflow.
+
+The enrollment matcher is currently a provisional local spectral fingerprint. It
+is suitable for validating the enrollment product flow, not as a sole detector for
+safety-critical sounds. It will be replaced with a measured learned embedding
+model before production use.

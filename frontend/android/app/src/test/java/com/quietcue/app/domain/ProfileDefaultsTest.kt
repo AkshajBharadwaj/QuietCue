@@ -12,7 +12,7 @@ class ProfileDefaultsTest {
 
         assertEquals(BuiltInProfile.entries.toSet(), profiles.mapNotNull(AlertProfile::builtIn).toSet())
         profiles.forEach { profile ->
-            assertEquals(SoundType.entries.toSet(), profile.soundRules.map(SoundRule::sound).toSet())
+            assertEquals(SoundType.entries.map(SoundType::id).toSet(), profile.soundRules.map(SoundRule::soundId).toSet())
             assertTrue(ProfileValidator.validate(profile).isEmpty())
         }
     }
@@ -20,7 +20,8 @@ class ProfileDefaultsTest {
     @Test
     fun `emergency profile enables critical sounds with persistent alerts`() {
         val profile = ProfileDefaults.forBuiltIn(BuiltInProfile.EMERGENCY)
-        val criticalRules = profile.soundRules.filter { it.sound.safetyCritical }
+        val criticalIds = SoundLibrary.builtIns().filter(SoundDefinition::safetyCritical).map(SoundDefinition::id).toSet()
+        val criticalRules = profile.soundRules.filter { it.soundId in criticalIds }
 
         assertTrue(criticalRules.isNotEmpty())
         criticalRules.forEach { rule ->

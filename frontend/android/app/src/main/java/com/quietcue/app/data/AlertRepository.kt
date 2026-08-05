@@ -2,6 +2,7 @@ package com.quietcue.app.data
 
 import com.quietcue.app.domain.DetectedAlert
 import com.quietcue.app.domain.RuntimeState
+import com.quietcue.app.domain.ProfileCatalog
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +12,26 @@ import org.json.JSONObject
 class AlertRepository(
     private val stateUrl: String = "http://127.0.0.1:8787/api/state",
 ) {
+    suspend fun syncProfile(catalog: ProfileCatalog) = withContext(Dispatchers.IO) {
+        val document = ProfileSyncJsonCodec.encode(catalog).toByteArray(Charsets.UTF_8)
+        val connection = URL(stateUrl).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "PUT"
+            connection.connectTimeout = 1_000
+            connection.readTimeout = 1_000
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.setFixedLengthStreamingMode(document.size)
+            connection.outputStream.use { it.write(document) }
+            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
+                "Profile sync returned HTTP ${connection.responseCode}"
+            }
+            connection.inputStream.close()
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     suspend fun fetchState(): RuntimeState = withContext(Dispatchers.IO) {
         val connection = URL(stateUrl).openConnection() as HttpURLConnection
         try {
@@ -46,6 +67,7 @@ class AlertRepository(
         category = json.optString("category", "informational"),
         pattern = json.optString("pattern", "none"),
         profileName = json.optString("profile_name", "Unknown profile"),
+        sourceLabel = json.optString("source_label"),
         totalLatencyMs = json.optInt("total_after_capture_ms", 0),
         requiresAcknowledgement = json.optBoolean("requires_ack", false),
         simulated = json.optBoolean("simulated", true),

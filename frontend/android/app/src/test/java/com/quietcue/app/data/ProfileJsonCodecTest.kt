@@ -18,4 +18,16 @@ class ProfileJsonCodecTest {
     fun `blank input decodes to an empty collection`() {
         assertEquals(emptyList<Any>(), ProfileJsonCodec.decode(""))
     }
+
+    @Test
+    fun `enrolled sound rule remains enabled after profile round trip`() {
+        val enrolledRule = ProfileDefaults.fallbackRule("custom:door-buzzer").copy(enabled = true)
+        val profile = ProfileDefaults.newCustom().let { draft ->
+            draft.copy(soundRules = draft.soundRules + enrolledRule)
+        }
+
+        val restored = ProfileJsonCodec.decode(ProfileJsonCodec.encode(listOf(profile))).single()
+
+        assertEquals(enrolledRule, restored.soundRules.single { it.soundId == enrolledRule.soundId })
+    }
 }

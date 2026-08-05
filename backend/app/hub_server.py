@@ -9,13 +9,16 @@ import os
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from backend.app.status_server import StatusHttpServer
 from backend.communication.stream_protocol import ProtocolError, WireMessage, read_message, write_message
-from backend.inference.pipeline import HubInferencePipeline
+from backend.inference.custom_sound_matcher import CustomSoundMatcher
+from backend.inference.pipeline import HubInferencePipeline, HubInferenceResult
 from backend.profiles.defaults import all_profiles, get_profile
 from backend.profiles.engine import DecisionResult, ProfileDecisionEngine
+from backend.profiles.wire_codec import decode_profile
 from backend.telemetry.alert_store import AlertStateStore
 
 
@@ -30,6 +33,7 @@ class QuietCueHubServer:
         pipeline_factory: Callable[[], HubInferencePipeline],
         decision_engine: ProfileDecisionEngine,
         state_store: AlertStateStore,
+        custom_matcher: CustomSoundMatcher | None = None,
         pairing_token: str = "",
     ) -> None:
         self._pipeline_factory = pipeline_factory
@@ -37,6 +41,7 @@ class QuietCueHubServer:
         self._pipeline_lock = asyncio.Lock()
         self._decision_engine = decision_engine
         self._state_store = state_store
+        self._custom_matcher = custom_matcher or CustomSoundMatcher(decision_engine.profile.custom_sounds)
         self._pairing_token = pairing_token
 
     async def handle_client(
@@ -123,7 +128,7 @@ class QuietCueHubServer:
             writer.close()
             await writer.wait_closed()
 
-    async def _process_audio(self, message: WireMessage) -> tuple[object, DecisionResult]:
+    async def _process_audio(self, message: WireMessage) -> tuple[HubInferenceResult, DecisionResult]:
         body = message.body
         if body.get("encoding") != "pcm_s16le" or body.get("channels") != 1:
             raise ValueError("Only mono pcm_s16le audio is supported")
@@ -148,8 +153,15 @@ class QuietCueHubServer:
                 message.payload,
                 sample_rate,
                 body.get("edge_analysis") if isinstance(body.get("edge_analysis"), dict) else None,
-                phrase_triggers,
+                list(dict.fromkeys([*self._decision_engine.profile.phrase_triggers, *phrase_triggers])),
             )
+            custom_events = await asyncio.to_thread(
+                self._custom_matcher.match_pcm16,
+                message.payload,
+                sample_rate,
+            )
+            if custom_events:
+                inference = replace(inference, events=inference.events + custom_events)
         decisions = self._decision_engine.decide(
             inference.events,
             captured_at_ms=captured_at_ms,
@@ -187,13 +199,30 @@ async def serve(
 ) -> None:
     profile = get_profile(profile_id)
     state_store = AlertStateStore(profile, jsonl_path=event_log)
+    decision_engine = ProfileDecisionEngine(profile)
+    custom_matcher = CustomSoundMatcher(profile.custom_sounds)
     hub = QuietCueHubServer(
         _pipeline_factory(classifier),
-        ProfileDecisionEngine(profile),
+        decision_engine,
         state_store,
+        custom_matcher,
         pairing_token=pairing_token,
     )
-    status = StatusHttpServer(state_store.snapshot)
+
+    def update_profile(document: dict[str, object]) -> dict[str, object]:
+        updated = decode_profile(document)
+        decision_engine.set_profile(updated)
+        custom_matcher.set_prototypes(updated.custom_sounds)
+        state_store.set_profile(updated)
+        LOGGER.info(
+            "Active profile synchronized: %s (%d rules, %d enrolled sounds)",
+            updated.name,
+            len(updated.sound_rules),
+            len(updated.custom_sounds),
+        )
+        return {"status": "updated", "active_profile": updated.summary()}
+
+    status = StatusHttpServer(state_store.snapshot, update_profile=update_profile)
     audio_server = await asyncio.start_server(hub.handle_client, host, port)
     state_server = await asyncio.start_server(status.handle_client, state_host, state_port)
     audio_addresses = ", ".join(str(socket.getsockname()) for socket in audio_server.sockets or [])
@@ -231,18 +260,21 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if not args.pairing_token:
         LOGGER.warning("No pairing token configured; use only on a trusted development network")
-    asyncio.run(
-        serve(
-            args.host,
-            args.port,
-            args.state_host,
-            args.state_port,
-            args.pairing_token,
-            args.classifier,
-            args.profile,
-            args.event_log,
+    try:
+        asyncio.run(
+            serve(
+                args.host,
+                args.port,
+                args.state_host,
+                args.state_port,
+                args.pairing_token,
+                args.classifier,
+                args.profile,
+                args.event_log,
+            )
         )
-    )
+    except KeyboardInterrupt:
+        LOGGER.info("QuietCue hub stopped")
 
 
 if __name__ == "__main__":

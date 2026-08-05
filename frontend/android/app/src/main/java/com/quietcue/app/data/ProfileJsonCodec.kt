@@ -17,7 +17,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object ProfileJsonCodec {
-    private const val VERSION = 1
+    private const val VERSION = 2
 
     fun encode(profiles: List<AlertProfile>): String = JSONObject()
         .put("version", VERSION)
@@ -63,7 +63,7 @@ object ProfileJsonCodec {
                 profile.soundRules.forEach { rule ->
                     put(
                         JSONObject()
-                            .put("sound", rule.sound.name)
+                            .put("soundId", rule.soundId)
                             .put("enabled", rule.enabled)
                             .put("confidenceThreshold", rule.confidenceThreshold.toDouble())
                             .put("priority", rule.priority.name)
@@ -123,15 +123,20 @@ object ProfileJsonCodec {
                     }
                 }
             },
-            soundRules = ProfileDefaults.completeRules(decodedRules),
+            soundRules = ProfileDefaults.completeRules(decodedRules) + decodedRules.filter { rule ->
+                rule.soundId.startsWith("custom:")
+            },
         )
     }
 
     private fun decodeRule(json: JSONObject): SoundRule? {
-        val sound = json.enumOrNull<SoundType>("sound") ?: return null
-        val fallback = ProfileDefaults.completeRules(emptyList()).first { it.sound == sound }
+        val soundId = json.optString("soundId").ifBlank {
+            json.enumOrNull<SoundType>("sound")?.id.orEmpty()
+        }
+        if (soundId.isBlank()) return null
+        val fallback = ProfileDefaults.fallbackRule(soundId)
         return SoundRule(
-            sound = sound,
+            soundId = soundId,
             enabled = json.optBoolean("enabled", fallback.enabled),
             confidenceThreshold = json.optDouble(
                 "confidenceThreshold",

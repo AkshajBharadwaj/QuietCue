@@ -22,6 +22,7 @@ class AlertRepositoryTest {
                     "category": "emergency",
                     "pattern": "urgent_repeat",
                     "profile_name": "Home",
+                    "source_label": "Fire alarm",
                     "total_after_capture_ms": 41,
                     "requires_ack": true,
                     "simulated": true

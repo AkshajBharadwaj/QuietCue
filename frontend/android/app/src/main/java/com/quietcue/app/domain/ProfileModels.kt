@@ -40,6 +40,9 @@ enum class SoundType(
         displayName = "Phone ringing",
         description = "Phone calls and repeated ringtone patterns",
     ),
+    ;
+
+    val id: String get() = name.lowercase()
 }
 
 enum class AlertPriority(val displayName: String) {
@@ -59,6 +62,54 @@ enum class HapticStrength(val displayName: String) {
     GENTLE("Gentle"),
     STANDARD("Standard"),
     STRONG("Strong"),
+}
+
+data class SoundEnrollment(
+    val prototype: List<Float>,
+    val similarityThreshold: Float,
+    val positiveSampleCount: Int,
+    val backgroundSimilarity: Float,
+    val createdAtEpochMs: Long,
+    val matcherVersion: Int = 1,
+)
+
+data class SoundDefinition(
+    val id: String,
+    val displayName: String,
+    val description: String,
+    val safetyCritical: Boolean = false,
+    val builtInType: SoundType? = null,
+    val defaultPriority: AlertPriority = AlertPriority.ATTENTION,
+    val defaultHapticPattern: HapticPattern = HapticPattern.LONG_PULSE,
+    val defaultHapticStrength: HapticStrength = HapticStrength.STANDARD,
+    val defaultRequiresAcknowledgement: Boolean = false,
+    val enrollment: SoundEnrollment? = null,
+) {
+    val isEnrolled: Boolean get() = enrollment != null
+}
+
+object SoundLibrary {
+    fun builtIns(): List<SoundDefinition> = SoundType.entries.map { sound ->
+        val emergency = sound == SoundType.FIRE_ALARM || sound == SoundType.SIREN
+        SoundDefinition(
+            id = sound.id,
+            displayName = sound.displayName,
+            description = sound.description,
+            safetyCritical = sound.safetyCritical,
+            builtInType = sound,
+            defaultPriority = if (emergency) AlertPriority.EMERGENCY else AlertPriority.ATTENTION,
+            defaultHapticPattern = if (emergency) HapticPattern.URGENT_REPEAT else HapticPattern.LONG_PULSE,
+            defaultHapticStrength = if (emergency) HapticStrength.STRONG else HapticStrength.STANDARD,
+            defaultRequiresAcknowledgement = emergency,
+        )
+    }
+
+    fun complete(customSounds: List<SoundDefinition>): List<SoundDefinition> {
+        val builtInIds = SoundType.entries.map(SoundType::id).toSet()
+        return builtIns() + customSounds
+            .filter { it.id !in builtInIds && it.id.startsWith("custom:") }
+            .distinctBy(SoundDefinition::id)
+    }
 }
 
 enum class ActivityContext(val displayName: String) {
@@ -114,7 +165,7 @@ data class ActivationRule(
 )
 
 data class SoundRule(
-    val sound: SoundType,
+    val soundId: String,
     val enabled: Boolean,
     val confidenceThreshold: Float,
     val priority: AlertPriority,
@@ -143,7 +194,10 @@ data class AlertProfile(
 data class ProfileCatalog(
     val profiles: List<AlertProfile> = emptyList(),
     val activeProfileId: String = "",
+    val soundLibrary: List<SoundDefinition> = SoundLibrary.builtIns(),
 ) {
     val activeProfile: AlertProfile?
         get() = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.firstOrNull()
+
+    fun sound(soundId: String): SoundDefinition? = soundLibrary.firstOrNull { it.id == soundId }
 }

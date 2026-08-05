@@ -30,6 +30,11 @@ private enum class MainTab(val label: String) {
     PROFILES("Profiles"),
 }
 
+private enum class CreationFlow {
+    PROFILE_AGENT,
+    SOUND_ENROLLMENT,
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuietCueApp(viewModel: ProfileViewModel) {
@@ -40,6 +45,8 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
     var selectedTabName by rememberSaveable { mutableStateOf(MainTab.HOME.name) }
     val selectedTab = MainTab.valueOf(selectedTabName)
     var editorProfileJson by rememberSaveable { mutableStateOf<String?>(null) }
+    var creationFlowName by rememberSaveable { mutableStateOf<String?>(null) }
+    val creationFlow = creationFlowName?.let(CreationFlow::valueOf)
     val editorProfile = editorProfileJson?.let {
         runCatching { ProfileJsonCodec.decode(it).firstOrNull() }.getOrNull()
     }
@@ -51,9 +58,36 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
         }
     }
 
+    if (creationFlow == CreationFlow.PROFILE_AGENT) {
+        val activeProfile = catalog.activeProfile ?: ProfileDefaults.all().first()
+        ProfileAgentScreen(
+            activeProfile = activeProfile,
+            soundLibrary = catalog.soundLibrary,
+            onBack = { creationFlowName = null },
+            onReview = { profile ->
+                editorProfileJson = ProfileJsonCodec.encode(listOf(profile))
+                creationFlowName = null
+            },
+        )
+        return
+    }
+
+    if (creationFlow == CreationFlow.SOUND_ENROLLMENT) {
+        SoundEnrollmentScreen(
+            recordFingerprint = viewModel::recordEnrollmentFingerprint,
+            onBack = { creationFlowName = null },
+            onEnroll = { sound ->
+                viewModel.enrollSound(sound)
+                creationFlowName = null
+            },
+        )
+        return
+    }
+
     if (editorProfile != null) {
         ProfileEditorScreen(
             initialProfile = editorProfile,
+            soundLibrary = catalog.soundLibrary,
             onBack = { editorProfileJson = null },
             onSave = { profile ->
                 viewModel.save(profile)
@@ -87,7 +121,10 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                 ExtendedFloatingActionButton(
                     onClick = {
                         val template = catalog.activeProfile ?: ProfileDefaults.all().first()
-                        editorProfileJson = ProfileJsonCodec.encode(listOf(ProfileDefaults.newCustom(template)))
+                        val profile = ProfileDefaults.newCustom(template).copy(
+                            soundRules = ProfileDefaults.completeRules(template.soundRules, catalog.soundLibrary),
+                        )
+                        editorProfileJson = ProfileJsonCodec.encode(listOf(profile))
                     },
                     icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
                     text = { Text("New profile") },
@@ -107,10 +144,16 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                 onEdit = { editorProfileJson = ProfileJsonCodec.encode(listOf(it)) },
                 onActivate = viewModel::activate,
                 onDuplicate = {
-                    editorProfileJson = ProfileJsonCodec.encode(listOf(ProfileDefaults.duplicate(it)))
+                    val profile = ProfileDefaults.duplicate(it).copy(
+                        soundRules = ProfileDefaults.completeRules(it.soundRules, catalog.soundLibrary),
+                    )
+                    editorProfileJson = ProfileJsonCodec.encode(listOf(profile))
                 },
                 onDelete = viewModel::delete,
                 onReset = viewModel::reset,
+                onGenerateFromText = { creationFlowName = CreationFlow.PROFILE_AGENT.name },
+                onEnrollSound = { creationFlowName = CreationFlow.SOUND_ENROLLMENT.name },
+                onDeleteSound = viewModel::deleteEnrolledSound,
             )
         }
     }

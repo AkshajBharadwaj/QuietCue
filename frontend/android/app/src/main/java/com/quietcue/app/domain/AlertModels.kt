@@ -7,12 +7,15 @@ data class DetectedAlert(
     val category: String,
     val pattern: String,
     val profileName: String,
+    val sourceLabel: String,
     val totalLatencyMs: Int,
     val requiresAcknowledgement: Boolean,
     val simulated: Boolean,
 ) {
     val displayName: String
-        get() = event
+        get() = if (event.startsWith("custom:") && sourceLabel.startsWith("enrolled: ")) {
+            sourceLabel.removePrefix("enrolled: ")
+        } else event
             .split('_')
             .joinToString(" ") { word -> word.replaceFirstChar(Char::uppercase) }
 }

@@ -6,10 +6,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quietcue.app.data.AlertRepository
 import com.quietcue.app.data.ProfileRepository
+import com.quietcue.app.data.PhoneEnrollmentRecorder
+import com.quietcue.app.data.ProfileSyncJsonCodec
 import com.quietcue.app.domain.AlertProfile
 import com.quietcue.app.domain.ProfileCatalog
 import com.quietcue.app.domain.ProfileDefaults
 import com.quietcue.app.domain.RuntimeState
+import com.quietcue.app.domain.CapturedFingerprint
+import com.quietcue.app.domain.SoundDefinition
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,6 +25,7 @@ import kotlinx.coroutines.launch
 class ProfileViewModel(
     private val repository: ProfileRepository,
     private val alertRepository: AlertRepository,
+    private val enrollmentRecorder: PhoneEnrollmentRecorder,
 ) : ViewModel() {
     val catalog: StateFlow<ProfileCatalog> = repository.catalog.stateIn(
         scope = viewModelScope,
@@ -36,10 +41,21 @@ class ProfileViewModel(
 
     init {
         viewModelScope.launch {
+            var lastSyncedProfile: String? = null
             while (true) {
                 runCatching { alertRepository.fetchState() }
-                    .onSuccess { _runtimeState.value = it }
+                    .onSuccess { state ->
+                        _runtimeState.value = state
+                        val currentCatalog = catalog.value
+                        val payload = runCatching { ProfileSyncJsonCodec.encode(currentCatalog) }.getOrNull()
+                        if (payload != null && payload != lastSyncedProfile) {
+                            runCatching { alertRepository.syncProfile(currentCatalog) }
+                                .onSuccess { lastSyncedProfile = payload }
+                                .onFailure { lastSyncedProfile = null }
+                        }
+                    }
                     .onFailure { error ->
+                        lastSyncedProfile = null
                         _runtimeState.value = _runtimeState.value.copy(
                             backendConnected = false,
                             audioSourceConnected = false,
@@ -65,6 +81,17 @@ class ProfileViewModel(
         repository.resetBuiltIn(profileId)
     }
 
+    fun enrollSound(sound: SoundDefinition) = runAction("${sound.displayName} enrolled") {
+        repository.addEnrolledSound(sound)
+    }
+
+    fun deleteEnrolledSound(soundId: String) = runAction("Enrolled sound deleted") {
+        repository.deleteEnrolledSound(soundId)
+    }
+
+    suspend fun recordEnrollmentFingerprint(): CapturedFingerprint =
+        enrollmentRecorder.recordFingerprint()
+
     fun clearMessage() {
         _message.value = null
     }
@@ -85,6 +112,7 @@ class ProfileViewModel(
                 return ProfileViewModel(
                     ProfileRepository(context.applicationContext),
                     AlertRepository(),
+                    PhoneEnrollmentRecorder(),
                 ) as T
             }
         }
