@@ -22,6 +22,16 @@ sets `simulated` to `false`.
 
 ## Demo script
 
+On macOS, Linux, or WSL, the hub, optional attached Android launch, and a complete
+fire-alarm plus Sound Scout replay can be started together:
+
+```bash
+./scripts/run_demo.sh --showcase
+```
+
+The script leaves the hub running for interaction until Ctrl+C. The individual
+steps below remain useful for Windows, physical hardware, and stage narration.
+
 ### Step A — Start the hub (~20 s)
 
 ```powershell

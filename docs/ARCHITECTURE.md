@@ -71,6 +71,7 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 | YAMNet baseline classifier | `backend/inference/sound_classifier.py` | Done (baseline, not safety-certified) |
 | Gated speech path (Faster-Whisper) | `backend/inference/speech.py` | Done |
 | Profiles, quiet hours, enrollment, identity context | `backend/profiles/` | Done |
+| Sound Scout observation + recurring-label discovery | `backend/telemetry/` | Done on computer hub; persisted metadata and reviewed label rules |
 | Uno Q live microphone + signal diagnostics | `uno_q/linux/audio_capture/` | Done: USB mic validated; no event inference on board |
 | Uno Q transport + hub selection | `uno_q/linux/transport/` | Done |
 | Android companion app | `frontend/android/` | Done (optional for demo) |
@@ -95,6 +96,8 @@ always enables haptics and reports the actual firmware result to the hub.
 - Wi-Fi for audio streaming; BLE only later for small commands.
 - Safety-critical detection stays local; cloud AI (if any) is advisory only.
 - Speech transcription is gated and never blocks environmental detection.
+- Recurring unmapped classifier labels are advisory discoveries and never trigger
+  emergency behavior or retain raw audio.
 - Few haptic patterns: urgency lives in the pattern, the exact event lives in
   the app.
 - Report both model latency and full user-perceived latency.

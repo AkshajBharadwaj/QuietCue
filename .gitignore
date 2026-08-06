@@ -33,6 +33,7 @@ models/converted/qnn_cache*/
 
 # TensorFlow downloads pretrained models here when configured locally.
 .model-cache/
+.quietcue/
 
 # Android / Gradle
 .gradle/

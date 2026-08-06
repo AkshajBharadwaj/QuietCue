@@ -19,6 +19,7 @@ EVENT_FREQUENCIES = {
     "baby_crying": 1600,
     "kitchen_timer": 2000,
     "phone_ringing": 2500,
+    "vacuum_cleaner": 3150,
 }
 
 assert set(EVENT_FREQUENCIES.values()) == set(DEMO_TONES)

@@ -15,6 +15,19 @@ class AlertRepositoryTest {
                   "status": "ready",
                   "active_profile": {"id": "home", "name": "Home"},
                   "hub": {"audio_source_connected": true},
+                  "discoveries": {
+                    "pending_count": 2,
+                    "candidates": [{
+                      "id": "disc_test",
+                      "label": "Vacuum cleaner",
+                      "episodes": 4,
+                      "first_seen_ms": 1000,
+                      "last_seen_ms": 9000,
+                      "mean_confidence": 0.72,
+                      "max_confidence": 0.88,
+                      "profile_names": ["Home"]
+                    }]
+                  },
                   "latest_alert": {
                     "event_id": "evt_test",
                     "event": "fire_alarm",
@@ -39,5 +52,9 @@ class AlertRepositoryTest {
         assertEquals("Fire Alarm", state.latestAlert?.displayName)
         assertEquals(41, state.latestAlert?.totalLatencyMs)
         assertTrue(state.latestAlert?.fallbackToPhone == true)
+        assertEquals(2, state.pendingDiscoveryCount)
+        assertEquals("Vacuum cleaner", state.discoveries.single().label)
+        assertEquals(4, state.discoveries.single().episodes)
+        assertEquals(listOf("Home"), state.discoveries.single().profileNames)
     }
 }

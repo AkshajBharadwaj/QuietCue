@@ -13,6 +13,7 @@ from backend.inference.pipeline import ConfirmedEvent, HubInferencePipeline
 from backend.inference.models import SoundPrediction
 from backend.profiles.defaults import get_profile
 from backend.profiles.engine import ProfileDecisionEngine
+from backend.profiles.wire_codec import decode_profile
 from backend.telemetry.alert_store import AlertStateStore
 from backend.app.hub_server import QuietCueHubServer
 from uno_q.linux.rpc_client import AlertDispatcher
@@ -29,6 +30,13 @@ class ConnectedFireAlarmClassifier:
     ) -> list[SoundPrediction]:
         self.calls += 1
         return [SoundPrediction("Fire alarm", 0.93)]
+
+
+class ConnectedVacuumClassifier:
+    def classify_pcm16(
+        self, pcm: bytes, sample_rate: int, top_k: int = 10
+    ) -> list[SoundPrediction]:
+        return [SoundPrediction("Vacuum cleaner", 0.88)]
 
 
 class RecordingHapticTransport:
@@ -124,6 +132,65 @@ class DemoPipelineTest(unittest.TestCase):
 
 
 class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_approved_classifier_label_reaches_profile_alert_pipeline(self) -> None:
+        profile = decode_profile(
+            {
+                "id": "home",
+                "name": "Home",
+                "sound_rules": [
+                    {
+                        "event": "custom:vacuum",
+                        "enabled": True,
+                        "confidence_threshold": 0.70,
+                        "category": "informational",
+                        "pattern": "two_short",
+                        "strength": "gentle",
+                        "requires_ack": False,
+                        "cooldown_seconds": 30,
+                    }
+                ],
+                "classifier_label_rules": [
+                    {"event": "custom:vacuum", "label": "Vacuum cleaner"}
+                ],
+            }
+        )
+        store = AlertStateStore(profile)
+        hub = QuietCueHubServer(
+            lambda: HubInferencePipeline(ConnectedVacuumClassifier()),
+            ProfileDecisionEngine(profile),
+            store,
+        )
+        server = await asyncio.start_server(hub.handle_client, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            await write_message(writer, WireMessage("edge_hello", {"device_id": "label-test"}))
+            await read_message(reader)
+            await write_message(
+                writer,
+                WireMessage(
+                    "audio_chunk",
+                    {
+                        "sequence": 0,
+                        "captured_at_ms": int(time.time() * 1_000),
+                        "sample_rate": 16_000,
+                        "channels": 1,
+                        "encoding": "pcm_s16le",
+                    },
+                    generate_tone_pcm("fire_alarm", 0.5),
+                ),
+            )
+            response = await read_message(reader)
+            writer.close()
+            await writer.wait_closed()
+
+            self.assertEqual(response.body["alerts"][0]["event"], "custom:vacuum")
+            self.assertEqual(response.body["alerts"][0]["pattern"], "two_short")
+            self.assertEqual(store.snapshot()["discoveries"]["candidates"], [])
+        finally:
+            server.close()
+            await server.wait_closed()
+
     async def test_audio_frame_returns_alert_command(self) -> None:
         profile = get_profile("home")
         store = AlertStateStore(profile)

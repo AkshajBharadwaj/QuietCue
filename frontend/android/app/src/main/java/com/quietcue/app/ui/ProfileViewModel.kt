@@ -19,6 +19,7 @@ import com.quietcue.app.domain.ProfileDefaults
 import com.quietcue.app.domain.RuntimeState
 import com.quietcue.app.domain.CapturedFingerprint
 import com.quietcue.app.domain.SoundDefinition
+import com.quietcue.app.domain.SoundDiscoveryCandidate
 import com.quietcue.app.domain.UserIdentity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,12 +99,36 @@ class ProfileViewModel(
         repository.resetBuiltIn(profileId)
     }
 
-    fun enrollSound(sound: SoundDefinition) = runAction("${sound.displayName} enrolled") {
-        repository.addEnrolledSound(sound)
+    fun enrollSound(sound: SoundDefinition, discoveryId: String? = null) {
+        viewModelScope.launch {
+            runCatching { repository.addEnrolledSound(sound) }
+                .onSuccess {
+                    if (discoveryId != null) {
+                        runCatching { alertRepository.updateDiscovery(discoveryId, "taught") }
+                    }
+                    _message.value = "${sound.displayName} enrolled"
+                }
+                .onFailure { _message.value = it.message ?: "Something went wrong" }
+        }
     }
 
     fun deleteEnrolledSound(soundId: String) = runAction("Enrolled sound deleted") {
         repository.deleteEnrolledSound(soundId)
+    }
+
+    fun dismissDiscovery(candidateId: String) = runAction("Sound suggestion dismissed") {
+        alertRepository.updateDiscovery(candidateId, "dismiss")
+    }
+
+    fun addDiscovery(candidate: SoundDiscoveryCandidate) {
+        viewModelScope.launch {
+            runCatching { repository.addDiscoveredSound(candidate) }
+                .onSuccess {
+                    runCatching { alertRepository.updateDiscovery(candidate.id, "taught") }
+                    _message.value = "${candidate.label} added to the active profile"
+                }
+                .onFailure { _message.value = it.message ?: "Something went wrong" }
+        }
     }
 
     fun saveIdentity(identity: UserIdentity) = runAction("Name enrollment saved") {

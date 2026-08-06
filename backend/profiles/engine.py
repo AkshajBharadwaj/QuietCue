@@ -40,6 +40,12 @@ class CustomSoundPrototype:
 
 
 @dataclass(frozen=True)
+class ClassifierLabelRule:
+    event: str
+    label: str
+
+
+@dataclass(frozen=True)
 class AlertProfile:
     profile_id: str
     name: str
@@ -47,6 +53,7 @@ class AlertProfile:
     quiet_hours: QuietHours
     sound_rules: tuple[SoundRule, ...]
     custom_sounds: tuple[CustomSoundPrototype, ...] = ()
+    classifier_label_rules: tuple[ClassifierLabelRule, ...] = ()
     speech_context: SpeechContext = SpeechContext()
 
     def rule_for(self, event: str) -> SoundRule | None:

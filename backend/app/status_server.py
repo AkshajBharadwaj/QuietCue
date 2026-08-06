@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -13,9 +14,11 @@ class StatusHttpServer:
         self,
         snapshot: Callable[[], dict[str, Any]],
         update_profile: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        update_discovery: Callable[[str, str], dict[str, object]] | None = None,
     ) -> None:
         self._snapshot = snapshot
         self._update_profile = update_profile
+        self._update_discovery = update_discovery
 
     async def handle_client(
         self,
@@ -41,7 +44,27 @@ class StatusHttpServer:
                 if not isinstance(document, dict):
                     raise ValueError("Profile document must be an object")
                 await self._respond(writer, 200, self._update_profile(document))
-            elif method not in {"GET", "PUT"}:
+            elif (
+                method == "POST"
+                and path.startswith("/api/discoveries/")
+                and self._update_discovery is not None
+            ):
+                candidate_id = path.removeprefix("/api/discoveries/")
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", candidate_id):
+                    raise ValueError("Invalid discovery candidate id")
+                content_length = _content_length(header_lines[1:])
+                if content_length < 2 or content_length > 4 * 1024:
+                    raise ValueError("Discovery action has an invalid size")
+                body = await reader.readexactly(content_length)
+                document = json.loads(body)
+                if not isinstance(document, dict) or not isinstance(document.get("action"), str):
+                    raise ValueError("Discovery action must be an object with an action")
+                await self._respond(
+                    writer,
+                    200,
+                    self._update_discovery(candidate_id, document["action"]),
+                )
+            elif method not in {"GET", "PUT", "POST"}:
                 await self._respond(writer, 405, {"error": "method_not_allowed"})
             else:
                 await self._respond(writer, 404, {"error": "not_found"})

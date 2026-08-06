@@ -57,6 +57,8 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
     val selectedTab = MainTab.valueOf(selectedTabName)
     var editorProfileJson by rememberSaveable { mutableStateOf<String?>(null) }
     var creationFlowName by rememberSaveable { mutableStateOf<String?>(null) }
+    var enrollmentDiscoveryId by rememberSaveable { mutableStateOf<String?>(null) }
+    var enrollmentSuggestedName by rememberSaveable { mutableStateOf("") }
     var memoryEditorFlowName by rememberSaveable { mutableStateOf<String?>(null) }
     var memoryEditorItemId by rememberSaveable { mutableStateOf<String?>(null) }
     val creationFlow = creationFlowName?.let(CreationFlow::valueOf)
@@ -89,10 +91,20 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
     if (creationFlow == CreationFlow.SOUND_ENROLLMENT) {
         SoundEnrollmentScreen(
             recordFingerprint = viewModel::recordEnrollmentFingerprint,
-            onBack = { creationFlowName = null },
-            onEnroll = { sound ->
-                viewModel.enrollSound(sound)
+            initialName = enrollmentSuggestedName,
+            initialDescription = enrollmentSuggestedName.takeIf(String::isNotBlank)?.let {
+                "Recurring sound QuietCue classified as $it"
+            }.orEmpty(),
+            onBack = {
                 creationFlowName = null
+                enrollmentDiscoveryId = null
+                enrollmentSuggestedName = ""
+            },
+            onEnroll = { sound ->
+                viewModel.enrollSound(sound, enrollmentDiscoveryId)
+                creationFlowName = null
+                enrollmentDiscoveryId = null
+                enrollmentSuggestedName = ""
             },
         )
         return
@@ -204,6 +216,13 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                 runtimeState = runtimeState,
                 phoneInferenceState = phoneInferenceState,
                 contentPadding = contentPadding,
+                onTeachDiscovery = { candidate ->
+                    enrollmentDiscoveryId = candidate.id
+                    enrollmentSuggestedName = candidate.label.take(40)
+                    creationFlowName = CreationFlow.SOUND_ENROLLMENT.name
+                },
+                onAddDiscovery = viewModel::addDiscovery,
+                onDismissDiscovery = viewModel::dismissDiscovery,
             )
             MainTab.PROFILES -> ProfilesScreen(
                 catalog = catalog,
@@ -219,7 +238,11 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                 onDelete = viewModel::delete,
                 onReset = viewModel::reset,
                 onGenerateFromText = { creationFlowName = CreationFlow.PROFILE_AGENT.name },
-                onEnrollSound = { creationFlowName = CreationFlow.SOUND_ENROLLMENT.name },
+                onEnrollSound = {
+                    enrollmentDiscoveryId = null
+                    enrollmentSuggestedName = ""
+                    creationFlowName = CreationFlow.SOUND_ENROLLMENT.name
+                },
                 onDeleteSound = viewModel::deleteEnrolledSound,
             )
             MainTab.MEMORY -> MemoryBankScreen(

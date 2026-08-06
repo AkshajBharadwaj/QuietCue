@@ -56,6 +56,17 @@ object ProfileSyncJsonCodec {
                     }
                 },
             )
+            .put(
+                "classifier_label_rules",
+                JSONArray().apply {
+                    profile.soundRules.forEach { rule ->
+                        val sound = soundsById[rule.soundId] ?: return@forEach
+                        sound.classifierLabels.forEach { label ->
+                            put(JSONObject().put("event", sound.id).put("label", label))
+                        }
+                    }
+                },
+            )
             .toString()
     }
 

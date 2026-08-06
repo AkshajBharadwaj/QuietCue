@@ -22,6 +22,7 @@ DEMO_TONES: dict[int, str] = {
     1600: "Baby cry, infant cry",
     2000: "Alarm clock",
     2500: "Telephone bell ringing",
+    3150: "Vacuum cleaner",
 }
 
 

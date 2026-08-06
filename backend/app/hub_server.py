@@ -15,11 +15,13 @@ from pathlib import Path
 from backend.app.status_server import StatusHttpServer
 from backend.communication.stream_protocol import ProtocolError, WireMessage, read_message, write_message
 from backend.inference.custom_sound_matcher import CustomSoundMatcher
+from backend.inference.classifier_label_matcher import ClassifierLabelMatcher
 from backend.inference.pipeline import HubInferencePipeline, HubInferenceResult, SoundClassifier
 from backend.profiles.defaults import all_profiles, get_profile
 from backend.profiles.engine import DecisionResult, ProfileDecisionEngine
 from backend.profiles.wire_codec import decode_profile
 from backend.telemetry.alert_store import AlertStateStore
+from backend.telemetry.sound_discovery import SoundDiscoveryTracker
 
 
 LOGGER = logging.getLogger("quietcue.hub")
@@ -34,6 +36,7 @@ class QuietCueHubServer:
         decision_engine: ProfileDecisionEngine,
         state_store: AlertStateStore,
         custom_matcher: CustomSoundMatcher | None = None,
+        classifier_label_matcher: ClassifierLabelMatcher | None = None,
         pairing_token: str = "",
     ) -> None:
         self._pipeline_factory = pipeline_factory
@@ -42,6 +45,9 @@ class QuietCueHubServer:
         self._decision_engine = decision_engine
         self._state_store = state_store
         self._custom_matcher = custom_matcher or CustomSoundMatcher(decision_engine.profile.custom_sounds)
+        self._classifier_label_matcher = classifier_label_matcher or ClassifierLabelMatcher(
+            decision_engine.profile.classifier_label_rules
+        )
         self._pairing_token = pairing_token
 
     async def handle_client(
@@ -183,15 +189,29 @@ class QuietCueHubServer:
                 message.payload,
                 sample_rate,
             )
-            if custom_events:
-                inference = replace(inference, events=inference.events + custom_events)
+            label_events = self._classifier_label_matcher.match_predictions(
+                inference.top_predictions
+            )
+            additional_events = (*label_events, *custom_events)
+            if additional_events:
+                strongest = {event.event: event for event in inference.events}
+                for event in additional_events:
+                    existing = strongest.get(event.event)
+                    if existing is None or event.confidence > existing.confidence:
+                        strongest[event.event] = event
+                inference = replace(inference, events=tuple(strongest.values()))
         decisions = self._decision_engine.decide(
             inference.events,
             captured_at_ms=captured_at_ms,
             source_sequence=sequence,
             now_ms=int(time.time() * 1_000),
         )
-        self._state_store.record(sequence, inference, decisions)
+        self._state_store.record(
+            sequence,
+            inference,
+            decisions,
+            captured_at_ms=captured_at_ms,
+        )
         return inference, decisions
 
     async def close(self) -> None:
@@ -271,15 +291,21 @@ async def serve(
     classifier: str,
     profile_id: str,
     event_log: Path | None,
+    discovery_state: Path | None,
     speech_model: str,
     speech_device: str,
     speech_compute_type: str,
     speech_language: str,
 ) -> None:
     profile = get_profile(profile_id)
-    state_store = AlertStateStore(profile, jsonl_path=event_log)
+    state_store = AlertStateStore(
+        profile,
+        jsonl_path=event_log,
+        discovery_tracker=SoundDiscoveryTracker(state_path=discovery_state),
+    )
     decision_engine = ProfileDecisionEngine(profile)
     custom_matcher = CustomSoundMatcher(profile.custom_sounds)
+    classifier_label_matcher = ClassifierLabelMatcher(profile.classifier_label_rules)
     hub = QuietCueHubServer(
         _pipeline_factory(
             classifier,
@@ -291,6 +317,7 @@ async def serve(
         decision_engine,
         state_store,
         custom_matcher,
+        classifier_label_matcher,
         pairing_token=pairing_token,
     )
 
@@ -298,19 +325,25 @@ async def serve(
         updated = decode_profile(document)
         decision_engine.set_profile(updated)
         custom_matcher.set_prototypes(updated.custom_sounds)
+        classifier_label_matcher.set_rules(updated.classifier_label_rules)
         state_store.set_profile(updated)
         LOGGER.info(
-            "Active profile synchronized: %s (%d rules, %d enrolled sounds, identity=%s, %d people, %d contexts)",
+            "Active profile synchronized: %s (%d rules, %d enrolled sounds, %d label rules, identity=%s, %d people, %d contexts)",
             updated.name,
             len(updated.sound_rules),
             len(updated.custom_sounds),
+            len(updated.classifier_label_rules),
             "yes" if updated.speech_context.identity is not None else "no",
             len(updated.speech_context.people),
             len(updated.speech_context.contexts),
         )
         return {"status": "updated", "active_profile": updated.summary()}
 
-    status = StatusHttpServer(state_store.snapshot, update_profile=update_profile)
+    status = StatusHttpServer(
+        state_store.snapshot,
+        update_profile=update_profile,
+        update_discovery=state_store.update_discovery,
+    )
     audio_server = await asyncio.start_server(hub.handle_client, host, port)
     state_server = await asyncio.start_server(status.handle_client, state_host, state_port)
     audio_addresses = ", ".join(str(socket.getsockname()) for socket in audio_server.sockets or [])
@@ -369,6 +402,12 @@ def _parse_args() -> argparse.Namespace:
         help="Optional metadata-only JSONL event log (raw audio is never written)",
     )
     parser.add_argument(
+        "--discovery-state",
+        type=Path,
+        default=Path(os.environ.get("QUIETCUE_DISCOVERY_STATE", ".quietcue/discovery_state.json")),
+        help="Metadata-only Sound Scout state (default: .quietcue/discovery_state.json)",
+    )
+    parser.add_argument(
         "--pairing-token",
         default=os.environ.get("QUIETCUE_PAIRING_TOKEN", ""),
         help="Shared development token; defaults to QUIETCUE_PAIRING_TOKEN",
@@ -392,6 +431,7 @@ def main() -> None:
                 args.classifier,
                 args.profile,
                 args.event_log,
+                args.discovery_state,
                 args.speech_model.strip(),
                 args.speech_device,
                 args.speech_compute_type,

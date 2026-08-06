@@ -7,6 +7,7 @@ from typing import Any
 
 from backend.profiles.engine import (
     AlertProfile,
+    ClassifierLabelRule,
     CustomSoundPrototype,
     QuietHours,
     SoundRule,
@@ -88,6 +89,24 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
             )
         )
 
+    label_rules_document = document.get("classifier_label_rules", [])
+    if not isinstance(label_rules_document, list) or len(label_rules_document) > 100:
+        raise ValueError("classifier_label_rules must be a bounded list")
+    classifier_label_rules: list[ClassifierLabelRule] = []
+    seen_label_rules: set[tuple[str, str]] = set()
+    for item in label_rules_document:
+        if not isinstance(item, dict):
+            raise ValueError("Each classifier label rule must be an object")
+        event = _required_text(item, "event", 100)
+        label = _required_text(item, "label", 100)
+        if not event.startswith("custom:") or event not in seen_events:
+            raise ValueError("Classifier label rule must reference a custom sound rule")
+        key = (event, label.casefold())
+        if key in seen_label_rules:
+            raise ValueError("Duplicate classifier label rule")
+        seen_label_rules.add(key)
+        classifier_label_rules.append(ClassifierLabelRule(event=event, label=label))
+
     return AlertProfile(
         profile_id=profile_id,
         name=name,
@@ -95,6 +114,7 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
         quiet_hours=quiet_hours,
         sound_rules=tuple(rules),
         custom_sounds=tuple(custom_sounds),
+        classifier_label_rules=tuple(classifier_label_rules),
         speech_context=speech_context,
     )
 

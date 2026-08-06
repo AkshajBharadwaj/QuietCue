@@ -100,11 +100,11 @@ fun ProfilesScreen(
             }
         }
 
-        val enrolledSounds = catalog.soundLibrary.filter(SoundDefinition::isEnrolled)
-        if (enrolledSounds.isNotEmpty()) {
-            item { SectionTitle("Enrolled sounds") }
-            items(count = enrolledSounds.size, key = { enrolledSounds[it].id }) { index ->
-                val sound = enrolledSounds[index]
+        val customSounds = catalog.soundLibrary.filter(SoundDefinition::isCustom)
+        if (customSounds.isNotEmpty()) {
+            item { SectionTitle("Personal sounds") }
+            items(count = customSounds.size, key = { customSounds[it].id }) { index ->
+                val sound = customSounds[index]
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -115,7 +115,9 @@ fun ProfilesScreen(
                         Column(Modifier.weight(1f)) {
                             Text(sound.displayName, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "${sound.enrollment?.positiveSampleCount ?: 0} examples • experimental local match",
+                                sound.enrollment?.let {
+                                    "${it.positiveSampleCount} examples • experimental local match"
+                                } ?: "Sound Scout label • reviewable classifier match",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }

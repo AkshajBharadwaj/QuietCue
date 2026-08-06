@@ -53,6 +53,8 @@ import kotlin.math.roundToInt
 @Composable
 fun SoundEnrollmentScreen(
     recordFingerprint: suspend () -> CapturedFingerprint,
+    initialName: String = "",
+    initialDescription: String = "",
     onBack: () -> Unit,
     onEnroll: (SoundDefinition) -> Unit,
 ) {
@@ -67,8 +69,8 @@ fun SoundEnrollmentScreen(
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         hasPermission = it
     }
-    var name by rememberSaveable { mutableStateOf("") }
-    var description by rememberSaveable { mutableStateOf("") }
+    var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
+    var description by rememberSaveable(initialDescription) { mutableStateOf(initialDescription) }
     var priorityName by rememberSaveable { mutableStateOf(AlertPriority.ATTENTION.name) }
     val priority = AlertPriority.valueOf(priorityName)
     val positives = remember { mutableStateListOf<CapturedFingerprint>() }

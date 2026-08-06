@@ -9,11 +9,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object SoundLibraryJsonCodec {
-    private const val VERSION = 1
+    private const val VERSION = 2
 
     fun encode(sounds: List<SoundDefinition>): String = JSONObject()
         .put("version", VERSION)
-        .put("sounds", JSONArray().apply { sounds.filter(SoundDefinition::isEnrolled).forEach { put(encode(it)) } })
+        .put("sounds", JSONArray().apply { sounds.filter(SoundDefinition::isCustom).forEach { put(encode(it)) } })
         .toString()
 
     fun decode(value: String): List<SoundDefinition> {
@@ -35,6 +35,7 @@ object SoundLibraryJsonCodec {
         .put("defaultHapticPattern", sound.defaultHapticPattern.name)
         .put("defaultHapticStrength", sound.defaultHapticStrength.name)
         .put("defaultRequiresAcknowledgement", sound.defaultRequiresAcknowledgement)
+        .put("classifierLabels", JSONArray(sound.classifierLabels))
         .put(
             "enrollment",
             sound.enrollment?.let { enrollment ->
@@ -51,12 +52,37 @@ object SoundLibraryJsonCodec {
     private fun decode(json: JSONObject): SoundDefinition? {
         val id = json.optString("id")
         val name = json.optString("displayName").trim()
-        val enrollmentJson = json.optJSONObject("enrollment") ?: return null
-        val prototypeJson = enrollmentJson.optJSONArray("prototype") ?: return null
-        val prototype = buildList {
-            for (index in 0 until prototypeJson.length()) add(prototypeJson.optDouble(index).toFloat())
+        val classifierJson = json.optJSONArray("classifierLabels")
+        val classifierLabels = buildList {
+            if (classifierJson != null && classifierJson.length() <= 10) {
+                for (index in 0 until classifierJson.length()) {
+                    classifierJson.optString(index).trim()
+                        .takeIf { it.isNotEmpty() && it.length <= 100 }
+                        ?.let(::add)
+                }
+            }
+        }.distinctBy(String::lowercase)
+        val enrollmentJson = json.optJSONObject("enrollment")
+        val enrollment = enrollmentJson?.let { enrollmentDocument ->
+            val prototypeJson = enrollmentDocument.optJSONArray("prototype") ?: return null
+            val prototype = buildList {
+                for (index in 0 until prototypeJson.length()) add(prototypeJson.optDouble(index).toFloat())
+            }
+            if (prototype.size != 8) return null
+            SoundEnrollment(
+                prototype = prototype,
+                similarityThreshold = enrollmentDocument.optDouble("similarityThreshold", 0.82).toFloat()
+                    .coerceIn(0.70f, 0.98f),
+                positiveSampleCount = enrollmentDocument.optInt("positiveSampleCount", 3).coerceAtLeast(1),
+                backgroundSimilarity = enrollmentDocument.optDouble("backgroundSimilarity", 0.0).toFloat()
+                    .coerceIn(0f, 1f),
+                createdAtEpochMs = enrollmentDocument.optLong("createdAtEpochMs", 0L),
+                matcherVersion = enrollmentDocument.optInt("matcherVersion", 1),
+            )
         }
-        if (!id.startsWith("custom:") || name.isBlank() || prototype.size != 8) return null
+        if (!id.startsWith("custom:") || name.isBlank() || (enrollment == null && classifierLabels.isEmpty())) {
+            return null
+        }
         val priority = json.enumOrNull<AlertPriority>("defaultPriority") ?: AlertPriority.ATTENTION
         return SoundDefinition(
             id = id,
@@ -72,16 +98,8 @@ object SoundLibraryJsonCodec {
                 "defaultRequiresAcknowledgement",
                 priority == AlertPriority.EMERGENCY,
             ),
-            enrollment = SoundEnrollment(
-                prototype = prototype,
-                similarityThreshold = enrollmentJson.optDouble("similarityThreshold", 0.82).toFloat()
-                    .coerceIn(0.70f, 0.98f),
-                positiveSampleCount = enrollmentJson.optInt("positiveSampleCount", 3).coerceAtLeast(1),
-                backgroundSimilarity = enrollmentJson.optDouble("backgroundSimilarity", 0.0).toFloat()
-                    .coerceIn(0f, 1f),
-                createdAtEpochMs = enrollmentJson.optLong("createdAtEpochMs", 0L),
-                matcherVersion = enrollmentJson.optInt("matcherVersion", 1),
-            ),
+            enrollment = enrollment,
+            classifierLabels = classifierLabels,
         )
     }
 

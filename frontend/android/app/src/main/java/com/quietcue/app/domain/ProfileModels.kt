@@ -84,8 +84,11 @@ data class SoundDefinition(
     val defaultHapticStrength: HapticStrength = HapticStrength.STANDARD,
     val defaultRequiresAcknowledgement: Boolean = false,
     val enrollment: SoundEnrollment? = null,
+    val classifierLabels: List<String> = emptyList(),
 ) {
     val isEnrolled: Boolean get() = enrollment != null
+    val isDiscovered: Boolean get() = classifierLabels.isNotEmpty()
+    val isCustom: Boolean get() = isEnrolled || isDiscovered
 }
 
 object SoundLibrary {

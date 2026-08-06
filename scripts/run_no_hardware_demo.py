@@ -20,6 +20,9 @@ from backend.audio.demo_audio import EVENT_FREQUENCIES, write_demo_wav  # noqa: 
 from backend.profiles.defaults import all_profiles  # noqa: E402
 
 
+DISCOVERY_DEMO_EVENTS = {"vacuum_cleaner"}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--event", choices=tuple(EVENT_FREQUENCIES), default="fire_alarm")
@@ -41,25 +44,40 @@ def main() -> None:
                 "demo",
                 "--profile",
                 args.profile,
+                "--discovery-state",
+                str(Path(temporary_directory) / "discovery-state.json"),
             ],
             cwd=REPOSITORY_ROOT,
         )
         try:
             _wait_until_ready()
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "uno_q.linux.transport.hub_client",
-                    str(wav_path),
-                    "--pc",
-                    "127.0.0.1:8765",
-                ],
-                cwd=REPOSITORY_ROOT,
-                check=True,
-            )
+            replay_count = 3 if args.event in DISCOVERY_DEMO_EVENTS else 1
+            for replay_index in range(replay_count):
+                subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "uno_q.linux.transport.hub_client",
+                        str(wav_path),
+                        "--pc",
+                        "127.0.0.1:8765",
+                    ],
+                    cwd=REPOSITORY_ROOT,
+                    check=True,
+                )
+                if replay_index + 1 < replay_count:
+                    time.sleep(3.1)
             with urllib.request.urlopen("http://127.0.0.1:8787/api/state", timeout=2) as response:
                 state = json.load(response)
+            discoveries = state.get("discoveries", {}).get("candidates", [])
+            if discoveries:
+                candidate = discoveries[0]
+                print(
+                    "Completed Sound Scout loop: "
+                    f"{candidate['label']} -> discovery candidate "
+                    f"({candidate['episodes']} separate episodes)"
+                )
+                return
             latest = state.get("latest_alert")
             if latest is None:
                 print(f"No alert emitted: {args.event} was suppressed by profile {args.profile}.")

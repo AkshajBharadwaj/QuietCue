@@ -30,12 +30,16 @@ deliver to the STM32 haptic firmware.
   heartbeats, profile decisions, alert commands, and haptic delivery results.
 - On-device 16 kHz YAMNet feature extraction and environmental-event mapping for
   fire alarms, sirens, horns, doorbells/knocks, crying babies, timers, and phones.
+- Sound Scout cards from the computer hub after three distinct high-confidence
+  episodes of an unmapped label, with reviewed direct-to-profile, dismiss, and
+  prefilled custom-enrollment actions.
 
 The phone inference service starts when the app opens and remains visible as a
 foreground notification. The dashboard shows whether the model is ready, whether
 an Uno Q is connected, and the latest phone inference latency. It also polls the
 computer development backend at `http://127.0.0.1:8787/api/state` when available.
-Full event history and haptic preview remain future work; local profile editing,
+Full event history and haptic preview remain future work; Sound Scout candidates,
+local profile editing,
 profile drafting, and enrollment storage continue to work without a backend
 connection. Recognition of an enrolled sound requires the hub connection.
 

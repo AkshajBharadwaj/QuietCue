@@ -12,26 +12,38 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Watch
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.quietcue.app.domain.ProfileCatalog
 import com.quietcue.app.domain.RuntimeState
+import com.quietcue.app.domain.SoundDiscoveryCandidate
 import com.quietcue.app.phone.PhoneInferenceServerState
 
 @Composable
@@ -40,8 +52,12 @@ fun DashboardScreen(
     runtimeState: RuntimeState,
     phoneInferenceState: PhoneInferenceServerState,
     contentPadding: PaddingValues,
+    onTeachDiscovery: (SoundDiscoveryCandidate) -> Unit,
+    onAddDiscovery: (SoundDiscoveryCandidate) -> Unit,
+    onDismissDiscovery: (String) -> Unit,
 ) {
     val profile = catalog.activeProfile
+    var addCandidate by remember { mutableStateOf<SoundDiscoveryCandidate?>(null) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -91,6 +107,23 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
+        }
+
+        if (runtimeState.discoveries.isNotEmpty()) {
+            item { SectionTitle("Sound Scout") }
+            items(
+                count = runtimeState.discoveries.take(3).size,
+                key = { index -> runtimeState.discoveries[index].id },
+            ) { index ->
+                val candidate = runtimeState.discoveries[index]
+                DiscoveryCard(
+                    candidate = candidate,
+                    profileName = profile?.name ?: "active profile",
+                    onAdd = { addCandidate = candidate },
+                    onTeach = { onTeachDiscovery(candidate) },
+                    onDismiss = { onDismissDiscovery(candidate.id) },
+                )
             }
         }
 
@@ -183,6 +216,83 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    addCandidate?.let { candidate ->
+        val suggestedThreshold = ((candidate.meanConfidence - 0.10f).coerceIn(0.35f, 0.80f) * 100).toInt()
+        AlertDialog(
+            onDismissRequest = { addCandidate = null },
+            title = { Text("Add ${candidate.label}?") },
+            text = {
+                Text(
+                    "QuietCue will add it to ${profile?.name ?: "the active profile"} as an " +
+                        "informational two-pulse alert with a $suggestedThreshold% threshold and " +
+                        "30-second cooldown. Other profiles will keep it disabled.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onAddDiscovery(candidate)
+                        addCandidate = null
+                    },
+                ) { Text("Add sound") }
+            },
+            dismissButton = {
+                TextButton(onClick = { addCandidate = null }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun DiscoveryCard(
+    candidate: SoundDiscoveryCandidate,
+    profileName: String,
+    onAdd: () -> Unit,
+    onTeach: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
+                Column(Modifier.weight(1f)) {
+                    Text("Recurring sound found", style = MaterialTheme.typography.labelLarge)
+                    Text(candidate.label, style = MaterialTheme.typography.titleLarge)
+                }
+                Icon(Icons.Rounded.GraphicEq, contentDescription = null)
+            }
+            Text(
+                "Heard in ${candidate.episodes} separate episodes • " +
+                    "${(candidate.meanConfidence * 100).toInt()}% average confidence",
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            if (candidate.profileNames.isNotEmpty()) {
+                Text(
+                    "Seen while ${candidate.profileNames.joinToString()} was active. " +
+                        "QuietCue does not have a configured rule for it yet.",
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
+                Text("Add to $profileName")
+            }
+            OutlinedButton(onClick = onTeach, modifier = Modifier.fillMaxWidth()) {
+                Text("Teach QuietCue this sound")
+            }
+            OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text("Ignore suggestion")
             }
         }
     }
