@@ -11,9 +11,13 @@
 #
 # Client configuration comes from environment variables on the BOARD
 # (put them in ~/.quietcue_env, which this script sources if present):
-#   QUIETCUE_HUB            hub endpoint as HOST:PORT (e.g. 100.x.y.z:8765)
+#   QUIETCUE_PC_HUB         computer hub as HOST:PORT (legacy: QUIETCUE_HUB)
+#   QUIETCUE_PHONE_HUB      optional phone hub as HOST:PORT
 #   QUIETCUE_PAIRING_TOKEN  shared development token (same as the hub)
 #   QUIETCUE_ALSA_DEVICE    ALSA capture device (default plughw:CARD=Microphone,DEV=0)
+#
+# Environmental and speech inference run on the selected phone/computer hub;
+# the Uno Q only captures/streams audio and delivers returned haptic commands.
 #
 # GitHub is the source of truth. The board clone is deployed into App Lab and a
 # user systemd service; no long-running process is managed with nohup.
@@ -69,12 +73,13 @@ install -m 0644 \
 systemctl --user daemon-reload
 systemctl --user enable "$SERVICE_NAME" >/dev/null
 
-if [ -z "${QUIETCUE_HUB:-}" ]; then
+if [ -z "${QUIETCUE_PC_HUB:-${QUIETCUE_HUB:-}}" ] && [ -z "${QUIETCUE_PHONE_HUB:-}" ]; then
     cat >&2 <<'EOF'
-QUIETCUE_HUB is not set (expected HOST:PORT of the inference hub), so the
-client was NOT started automatically. To configure, create ~/.quietcue_env:
+No connected inference hub is set, so the client was NOT started automatically.
+To configure, create ~/.quietcue_env:
 
-    QUIETCUE_HUB=<hub-host>:8765
+    QUIETCUE_PC_HUB=<computer-hub-host>:8765
+    # QUIETCUE_PHONE_HUB=<phone-hub-host>:8765
     QUIETCUE_PAIRING_TOKEN=<shared-development-token>
     QUIETCUE_ALSA_DEVICE=plughw:CARD=Microphone,DEV=0
 

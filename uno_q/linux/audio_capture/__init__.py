@@ -1,1 +1,1 @@
-"""Audio capture and inexpensive edge analysis."""
+"""Audio capture and inexpensive signal diagnostics."""

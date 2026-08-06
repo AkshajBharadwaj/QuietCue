@@ -35,15 +35,29 @@ server (`convert_model`, QUAD 3.4.4) and retrieves the artifact
 | Item | Value |
 | :--- | :--- |
 | Quantization | INT8, QDQ format (HTP-compatible — ConvInteger would silently fall back to CPU) |
-| Artifact | `yamnet_fp32_selfcontained_quantized.dlc`, QAIRT/QNN context format |
+| Artifact | `yamnet_fp32_selfcontained_quantized.dlc`, QAIRT DLC container |
 | Size | 14.25 MB → **3.63 MB** (3.92× smaller) |
 | Op coverage | **100 % supported, 0 unsupported ops** |
 | Conversion time | 3.3 s server-side |
 
-The DLC targets the QAIRT runtime (`qnn-net-run` / on-device deployment, e.g. a
-future Uno Q edge prefilter). For the in-process ONNX Runtime path we
-additionally profiled the AI Hub **w8a8 QDQ ONNX** of the same model
+The DLC targets the QAIRT/SNPE runtime. Its ZIP metadata identifies a DLC, not a
+QNN context binary; the conversion envelope's `output_format` field is therefore
+misleading. A QNN deployment must first generate a target-specific context
+binary. For the connected in-process ONNX Runtime path we additionally profiled
+the AI Hub **w8a8 QDQ ONNX** of the same model
 (`models/source/yamnet-onnx-w8a8/`).
+
+### Uno Q deployment boundary
+
+The 3.63 MB DLC is checked in and matches the recorded SHA-256. A physical
+QRB2210 UNO Q test exposed the board's ADSP/DMA devices and reached SNPE, but
+strict `--use_dsp` execution failed with `No backend library matched for this
+build and target`. This DLC is not compatible with the original UNO Q's V66
+audio DSP and there is no UNO Q latency/accuracy claim.
+
+QuietCue therefore performs all semantic inference on the selected Samsung/PC
+hub. The UNO Q streams microphone PCM and delivers returned haptic commands; it
+does not load this DLC or substitute CPU inference.
 
 ## Target hardware
 
@@ -115,8 +129,9 @@ record of the tool invocation.
 2. Bit-identical accuracy to the fp32 reference — no quantization risk in the
    safety path. w8a8 saves only ~0.1 ms here and showed top-1 drift on one
    probe; INT8 pays off where footprint matters, not here.
-3. The QUAD INT8 DLC (3.6 MB, 100 % op coverage) is the right artifact for a
-   future Uno Q (QCS2210) edge prefilter — conversion is proven and scripted.
+3. The QUAD INT8 DLC (3.6 MB, 100 % converter op coverage) is retained for a
+   compatible connected QAIRT/SNPE target; physical testing proved it is not a
+   backend match for the original QRB2210 UNO Q ADSP.
 
 ## Generated runner notes
 

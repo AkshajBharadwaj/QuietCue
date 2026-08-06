@@ -15,13 +15,13 @@ Microphone (USB/ALSA) on Arduino Uno Q
     v
 Uno Q Linux side          uno_q/linux/
 - ALSA capture (arecord pipe, never written to disk)
-- edge analysis: loudness, VAD, tonal-alarm candidates
+- signal diagnostics: loudness and voice activity (not classification)
 - chunked PCM16 transport, hub selection, pairing token
     |
     |  Wi-Fi / Tailscale, raw TCP, 16 kHz mono PCM16 in 20-1000 ms chunks
     v
-Snapdragon X Elite hub    backend/
-- environmental classifier (YAMNet baseline or demo simulator)
+Connected hub             backend/ (computer now; phone endpoint supported)
+- environmental classifier (quantized ONNX or baseline YAMNet)
 - gated Faster-Whisper speech path (name/phrase triggers)
 - custom enrolled-sound matcher
 - profile + quiet-hours decision engine
@@ -41,8 +41,8 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 
 | Device | Owns | Must never do |
 |---|---|---|
-| Snapdragon PC (hub) | classification, speech, profiles, prioritization, dashboard API, benchmarks | depend on cloud for alerts |
-| Uno Q Linux | capture, edge candidates, transport, RPC to STM32 | heavy ML, dev tooling |
+| Connected hub | classification, speech, profiles, prioritization, dashboard API | depend on cloud for alerts |
+| Uno Q Linux | capture, signal diagnostics, transport, RPC to STM32 | classify environmental events or invent alerts while disconnected |
 | STM32 | exact motor timing, ack button, LEDs | networking, ML |
 | Android app | profile editing, enrollment, event history | be required for the core demo |
 
@@ -51,7 +51,7 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 - **Audio up:** length-prefixed wire messages (`backend/communication/stream_protocol.py`).
   `edge_hello` (device id + pairing token) -> `hub_hello` -> repeated
   `audio_chunk` (sequence, captured_at_ms, sample_rate 16000, channels 1,
-  `pcm_s16le` payload, edge_analysis, phrase_triggers) -> `detection_result`
+  `pcm_s16le` payload, signal diagnostics, phrase_triggers) -> `detection_result`
   per chunk. Heartbeats supported.
 - **Alerts down:** each `detection_result` carries decided alerts
   (`event`, `category`, `pattern`, `requires_ack`, confidence, profile).
@@ -62,7 +62,7 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 - **Hardware result:** the Uno Q sends `haptic_result` after dispatch so the
   hub records delivery, bridge health, and acknowledgement state.
 
-## Implementation status (2026-08-05)
+## Implementation status (2026-08-06)
 
 | Component | Path | Status |
 |---|---|---|
@@ -71,14 +71,20 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 | YAMNet baseline classifier | `backend/inference/sound_classifier.py` | Done (baseline, not safety-certified) |
 | Gated speech path (Faster-Whisper) | `backend/inference/speech.py` | Done |
 | Profiles, quiet hours, enrollment, identity context | `backend/profiles/` | Done |
-| Uno Q live microphone + edge analyzer | `uno_q/linux/audio_capture/` | Done (validated with USB condenser mic) |
+| Uno Q live microphone + signal diagnostics | `uno_q/linux/audio_capture/` | Done: USB mic validated; no event inference on board |
 | Uno Q transport + hub selection | `uno_q/linux/transport/` | Done |
 | Android companion app | `frontend/android/` | Done (optional for demo) |
 | STM32 haptic firmware + RPC server | `uno_q/stm32/` | Done; App Lab firmware 0.2.0 |
 | Linux-side RPC client (alert -> motor) | `uno_q/linux/rpc_client/` | Done; real App Lab Bridge transport |
 | Board restart/reconnect lifecycle | `scripts/run_uno_q_client.sh`, `uno_q/linux/systemd/` | Done |
-| Converted/quantized models | `models/` | Being populated (QUAD INT8 lane) |
-| QUAD benchmarks | `docs/benchmarks/` | Being populated |
+| Converted/quantized models | `models/` | Done: W8A8 ONNX + 3.63 MB INT8 DLC checked in |
+| QUAD benchmarks | `docs/benchmarks/` | Done for Snapdragon X Elite; not transferable to QRB2210 |
+
+QUAD produced the checked-in INT8 DLC and W8A8 ONNX artifacts. They are retained
+for capable Samsung/PC inference runtimes. Physical testing showed that the
+original QRB2210 UNO Q exposes an audio DSP, not the HTP/CDSP target used by the
+converted DLC; strict SNPE DSP execution reported no matching backend. The board
+therefore streams audio and never claims accelerator inference.
 
 Without `--haptics`, alerts remain pending/simulated. The managed Uno Q service
 always enables haptics and reports the actual firmware result to the hub.

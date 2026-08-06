@@ -11,8 +11,11 @@ if [[ -f "$ENV_FILE" ]]; then
     set -a; source "$ENV_FILE"; set +a
 fi
 
-if [[ -z "${QUIETCUE_HUB:-}" ]]; then
-    echo "ERROR: QUIETCUE_HUB is not configured in $ENV_FILE" >&2
+readonly PC_HUB="${QUIETCUE_PC_HUB:-${QUIETCUE_HUB:-}}"
+readonly PHONE_HUB="${QUIETCUE_PHONE_HUB:-}"
+
+if [[ -z "$PC_HUB" && -z "$PHONE_HUB" ]]; then
+    echo "ERROR: configure QUIETCUE_PC_HUB/QUIETCUE_PHONE_HUB in $ENV_FILE" >&2
     exit 78
 fi
 
@@ -43,11 +46,19 @@ cd "$PROJECT_DIR"
 readonly ALSA_DEVICE="${QUIETCUE_ALSA_DEVICE:-plughw:CARD=Microphone,DEV=0}"
 readonly DEVICE_ID="${QUIETCUE_DEVICE_ID:-uno-q-dev}"
 
-echo "Starting QuietCue: microphone $ALSA_DEVICE -> $QUIETCUE_HUB, haptics enabled"
-exec python3 -u -m uno_q.linux.transport.hub_client \
-    --microphone \
-    --input-device "$ALSA_DEVICE" \
-    --pc "$QUIETCUE_HUB" \
-    --device-id "$DEVICE_ID" \
-    --haptics \
+client_args=(
+    --microphone
+    --input-device "$ALSA_DEVICE"
+    --device-id "$DEVICE_ID"
+    --haptics
     --compact
+)
+if [[ -n "$PC_HUB" ]]; then
+    client_args+=(--pc "$PC_HUB")
+fi
+if [[ -n "$PHONE_HUB" ]]; then
+    client_args+=(--phone "$PHONE_HUB")
+fi
+
+echo "Starting QuietCue: microphone $ALSA_DEVICE, inference hub PC=${PC_HUB:-none}, phone=${PHONE_HUB:-none}, haptics enabled"
+exec python3 -u -m uno_q.linux.transport.hub_client "${client_args[@]}"

@@ -5,8 +5,8 @@ onnx>=1.17
 # Hexagon NPU ONNX Execution Provider (win-arm64 only). onnxruntime-qnn 2.x is
 # a plugin EP package that pins a matching base onnxruntime and ships the
 # QnnHtp DLLs. On non-Snapdragon dev machines install plain onnxruntime instead.
-onnxruntime-qnn>=1.17.0    # win-arm64 (Snapdragon X Elite)
-# onnxruntime>=1.17.0      # x86/other fallback (use instead of onnxruntime-qnn)
+onnxruntime-qnn>=1.17.0; sys_platform == "win32" and platform_machine == "ARM64"
+onnxruntime>=1.17.0; sys_platform != "win32" or platform_machine != "ARM64"
 
 # QUAD client SDK: NPU session helpers (ort_qnn) + MCP tool access for
 # conversion/profiling workflows. Not yet on PyPI; install from source:

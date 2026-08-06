@@ -98,7 +98,7 @@ async def stream_chunks(
 
     if lease is None:
         if not endpoints:
-            print("No hub configured; showing Uno Q edge candidates only.")
+            print("No hub configured; showing Uno Q signal diagnostics only.")
             _print_edge_only(chunks, analyzer, compact)
             return
         raise NoHubAvailable("No configured inference hub is reachable")
@@ -299,7 +299,9 @@ def _print_result(
     transcript = response.get("transcript")
     print(
         f"seq={chunk.sequence} rms={edge['rms_dbfs']}dBFS voice={response.get('voice_detected', False)} "
-        f"events={event_names or '-'} alerts={alert_names or '-'}"
+        f"events={event_names or '-'} "
+        f"inference={response.get('inference_source', 'connected_hub')} "
+        f"alerts={alert_names or '-'}"
         + (f" transcript={transcript!r}" if transcript else "")
     )
 
