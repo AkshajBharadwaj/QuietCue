@@ -77,10 +77,6 @@ class PhoneInferenceService : Service() {
         super.onDestroy()
     }
 
-    override fun onTimeout(startId: Int, fgsType: Int) {
-        stopSelf()
-    }
-
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -97,7 +93,7 @@ class PhoneInferenceService : Service() {
             startForeground(
                 NOTIFICATION_ID,
                 notification(message),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
             )
         } else {
             startForeground(NOTIFICATION_ID, notification(message))
