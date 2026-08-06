@@ -5,6 +5,23 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
+# Secrets and local configuration -- never commit tokens or credentials.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.quietcue_env
+
+# Local logs and model weight artifacts (metadata belongs in git, weights do not).
+*.log
+models/**/*.onnx
+models/**/*.tflite
+models/**/*.dlc
+models/**/*.bin
+models/**/*.pt
+models/**/*.pb
+
 # TensorFlow downloads pretrained models here when configured locally.
 .model-cache/
 

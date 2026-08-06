@@ -3,6 +3,32 @@
 QuietCue is an AI-assisted accessibility system that turns important environmental
 sounds into clear haptic alerts for deaf and hard-of-hearing users.
 
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system diagram and
+current implementation status, and [`docs/DEMO.md`](docs/DEMO.md) for the
+3-minute demo runbook.
+
+## Quick start (Windows hub)
+
+One command creates the virtual environment if needed and starts the hub with
+the dependency-free demo classifier:
+
+```powershell
+.\scripts\run_demo.ps1
+```
+
+Useful variants:
+
+```powershell
+.\scripts\run_demo.ps1 -Classifier yamnet          # real YAMNet classifier
+.\scripts\run_demo.ps1 -SpeechModel tiny.en        # add the gated speech path
+.\scripts\run_demo.ps1 -AlertProfile sleep         # start in another profile
+.\scripts\run_demo.ps1 -BindHost 0.0.0.0           # accept the Uno Q over LAN/Tailscale
+```
+
+Set `QUIETCUE_PAIRING_TOKEN` first when a real Uno Q will connect. On the
+board, use `scripts/setup_uno_q.sh` once and `scripts/deploy_uno_q.sh` to
+pull and (re)start the microphone client.
+
 ## Live Uno Q microphone
 
 The Uno Q can now capture a USB/ALSA microphone continuously, perform lightweight
@@ -90,3 +116,19 @@ the Python standard library and can be tested without installing TensorFlow:
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## Team and submission
+
+- **Team members:** _add names and emails here before submission._
+- **License:** [MIT](LICENSE).
+- **Setup from scratch:** Quick start above (hub) plus
+  [`docs/UNO_Q_MICROPHONE.md`](docs/UNO_Q_MICROPHONE.md) (board) — or use the
+  no-hardware demo if no board is available.
+- **Demo:** [`docs/DEMO.md`](docs/DEMO.md).
+- **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+- **Benchmarks:** `docs/benchmarks/` (QUAD conversion and profiling reports).
+- **Tests:** `python3 -m unittest discover -s tests -v` (no ML dependencies
+  needed).
+
+No secrets belong in this repository: pairing tokens, QUAD MCP tokens,
+Tailscale keys, and Wi-Fi credentials are environment variables only.

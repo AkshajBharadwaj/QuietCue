@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from uno_q.linux.audio_capture.alsa_source import (
     list_capture_hardware,
 )
 from uno_q.linux.audio_capture.edge_analyzer import EdgeAudioAnalyzer
+from uno_q.linux.rpc_client import AlertDispatcher, ConsoleHapticTransport
 from uno_q.linux.transport.hub_selector import (
     HubCandidate,
     HubKind,
@@ -76,6 +78,7 @@ async def stream_chunks(
     phrase_triggers: list[str],
     *,
     compact: bool = False,
+    alert_dispatcher: AlertDispatcher | None = None,
 ) -> None:
     candidates = await asyncio.gather(
         *(probe(endpoint, device_id, pairing_token) for endpoint in endpoints)
@@ -126,6 +129,13 @@ async def stream_chunks(
                 ),
             )
             response = await read_message(reader)
+            if alert_dispatcher is not None and response.kind == "detection_result":
+                for outcome in alert_dispatcher.handle_detection_result(response.body):
+                    print(
+                        f"haptic {outcome.pattern} for {outcome.event}: "
+                        f"{'delivered' if outcome.delivered else outcome.reason}"
+                    )
+                alert_dispatcher.poll_acknowledge()
             _print_result(chunk, edge.to_wire(), response.body, compact)
     finally:
         writer.close()
@@ -142,6 +152,7 @@ async def stream_wav(
     chunk_ms: int,
     realtime: bool,
     compact: bool = False,
+    alert_dispatcher: AlertDispatcher | None = None,
 ) -> None:
     await stream_chunks(
         iter_wav_chunks(path, chunk_ms=chunk_ms, realtime=realtime),
@@ -151,6 +162,7 @@ async def stream_wav(
         pairing_token,
         phrase_triggers,
         compact=compact,
+        alert_dispatcher=alert_dispatcher,
     )
 
 
@@ -164,6 +176,7 @@ async def stream_microphone(
     chunk_ms: int,
     max_chunks: int | None,
     compact: bool,
+    alert_dispatcher: AlertDispatcher | None = None,
 ) -> None:
     source = AlsaPcmSource(alsa_device, chunk_ms=chunk_ms)
     print(
@@ -179,6 +192,7 @@ async def stream_microphone(
             pairing_token,
             phrase_triggers,
             compact=compact,
+            alert_dispatcher=alert_dispatcher,
         )
 
 
@@ -252,7 +266,11 @@ def _parse_args() -> argparse.Namespace:
         default=RoutingPreference.AUTO.value,
     )
     parser.add_argument("--device-id", default="uno-q-dev")
-    parser.add_argument("--pairing-token", default="")
+    parser.add_argument(
+        "--pairing-token",
+        default=os.environ.get("QUIETCUE_PAIRING_TOKEN", ""),
+        help="Hub pairing token; defaults to the QUIETCUE_PAIRING_TOKEN environment variable",
+    )
     parser.add_argument("--phrase", action="append", default=[])
     parser.add_argument("--chunk-ms", type=int, default=500)
     parser.add_argument(
@@ -269,6 +287,11 @@ def _parse_args() -> argparse.Namespace:
         "--realtime",
         action="store_true",
         help="Pace chunks like live capture instead of replaying as fast as possible",
+    )
+    parser.add_argument(
+        "--haptics",
+        action="store_true",
+        help="Dispatch hub alerts to the haptic RPC bridge (console transport off-device)",
     )
     return parser.parse_args()
 
@@ -291,6 +314,7 @@ def main() -> None:
         endpoints.append(_endpoint(args.pc, HubKind.COPILOT_PC, "configured-pc"))
     if args.phone:
         endpoints.append(_endpoint(args.phone, HubKind.SAMSUNG_PHONE, "configured-phone"))
+    dispatcher = AlertDispatcher(ConsoleHapticTransport()) if args.haptics else None
     if args.microphone:
         asyncio.run(
             stream_microphone(
@@ -303,6 +327,7 @@ def main() -> None:
                 args.chunk_ms,
                 args.max_chunks,
                 args.compact,
+                alert_dispatcher=dispatcher,
             )
         )
     else:
@@ -317,6 +342,7 @@ def main() -> None:
                 args.chunk_ms,
                 args.realtime,
                 args.compact,
+                alert_dispatcher=dispatcher,
             )
         )
 
