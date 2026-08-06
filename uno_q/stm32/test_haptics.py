@@ -18,17 +18,12 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from typing import Any
 
 try:
     from arduino.app_utils import Bridge  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - the bridge only exists on the board.
-    print(
-        "The Arduino App Lab bridge module is not available. Run this script on "
-        "the Uno Q Linux side inside an App Lab environment (the same Python "
-        "that App Lab apps use), not on a development PC.",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+    Bridge: Any | None = None
 
 
 PATTERNS = ("short_pulse", "two_short", "long_pulse", "urgent_repeat")
@@ -45,6 +40,8 @@ PATTERN_SETTLE_SECONDS = {
 
 def call(method: str, *args: object) -> object:
     """Invoke one firmware RPC and report the round trip."""
+    if Bridge is None:
+        raise RuntimeError("Arduino App Lab Bridge is unavailable")
     started = time.perf_counter()
     result = Bridge.call(method, *args)
     elapsed_ms = (time.perf_counter() - started) * 1_000
@@ -79,6 +76,15 @@ def run_all(intensity: int, repeat: int) -> None:
 
 
 def main() -> None:
+    if Bridge is None:
+        print(
+            "The Arduino App Lab bridge module is not available. Run this script on "
+            "the Uno Q Linux side inside an App Lab environment (the same Python "
+            "that App Lab apps use), not on a development PC.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "command",

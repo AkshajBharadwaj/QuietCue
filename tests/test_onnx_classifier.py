@@ -1,5 +1,9 @@
 """Tests for the ONNX environmental classifier and its event-mapper contract."""
 
+import importlib.util
+import sys
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -10,10 +14,10 @@ from backend.inference.onnx_sound_classifier import (
     OnnxSoundClassifier,
 )
 
-requires_model = pytest.mark.skipif(
-    not DEFAULT_MODEL_PATH.is_file(), reason="model not downloaded (scripts/fetch_models.ps1)"
+requires_runtime_and_model = pytest.mark.skipif(
+    importlib.util.find_spec("onnxruntime") is None or not DEFAULT_MODEL_PATH.is_file(),
+    reason="ONNX Runtime or model unavailable (run scripts/fetch_models.ps1)",
 )
-onnxruntime = pytest.importorskip("onnxruntime")
 
 
 @pytest.fixture(scope="module")
@@ -36,7 +40,24 @@ def test_labels_cover_every_mapped_event():
     assert any(term in label for term in _SPEECH_TERMS for label in labels)
 
 
-@requires_model
+def test_cpu_target_does_not_require_quad_client(monkeypatch, tmp_path):
+    expected_session = object()
+    runtime = SimpleNamespace(
+        InferenceSession=lambda path, providers: (
+            expected_session
+            if path == str(tmp_path / "model.onnx") and providers == ["CPUExecutionProvider"]
+            else None
+        )
+    )
+    monkeypatch.setitem(sys.modules, "onnxruntime", runtime)
+
+    classifier = object.__new__(OnnxSoundClassifier)
+    classifier.model_path = tmp_path / "model.onnx"
+
+    assert classifier._create_session("cpu", cache_dir=None) is expected_session
+
+
+@requires_runtime_and_model
 class TestOnnxSoundClassifier:
     def test_rejects_wrong_sample_rate(self, classifier):
         with pytest.raises(ValueError, match="16000"):

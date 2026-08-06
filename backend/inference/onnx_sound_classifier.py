@@ -13,6 +13,7 @@ from the labels.txt shipped with the model so index order always matches.
 from __future__ import annotations
 
 import argparse
+import logging
 import time
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from backend.inference.audio_features import waveform_to_patches
 from backend.inference.models import SoundPrediction
 
 TARGET_SAMPLE_RATE = 16_000
+LOGGER = logging.getLogger("quietcue.onnx_classifier")
 
 DEFAULT_MODEL_DIR = Path(__file__).resolve().parents[2] / "models"
 DEFAULT_MODEL_PATH = (
@@ -112,23 +114,34 @@ class OnnxSoundClassifier:
         return (raw.astype(np.float64) - zero_point) * scale
 
     def _create_session(self, target: str, cache_dir: str | Path | None):
-        from quad_mcp_client.ort_qnn import NPUFallbackError, create_npu_session
-
         if target == "cpu":
             import onnxruntime as ort
 
             return ort.InferenceSession(str(self.model_path), providers=["CPUExecutionProvider"])
         if target == "npu":
+            try:
+                from quad_mcp_client.ort_qnn import create_npu_session
+            except ImportError as exc:
+                raise RuntimeError(
+                    "NPU target requires the QUAD client; install quad-mcp-client first"
+                ) from exc
             return create_npu_session(self.model_path, cache_dir=cache_dir)
         if target == "auto":
             try:
-                return create_npu_session(self.model_path, cache_dir=cache_dir)
-            except (NPUFallbackError, RuntimeError, ImportError):
-                import onnxruntime as ort
+                from quad_mcp_client.ort_qnn import NPUFallbackError, create_npu_session
+            except ImportError as exc:
+                LOGGER.info("QUAD NPU runtime unavailable; using ONNX CPU: %s", exc)
+            else:
+                try:
+                    return create_npu_session(self.model_path, cache_dir=cache_dir)
+                except (NPUFallbackError, OSError, RuntimeError) as exc:
+                    LOGGER.warning("NPU initialization failed; using ONNX CPU: %s", exc)
 
-                return ort.InferenceSession(
-                    str(self.model_path), providers=["CPUExecutionProvider"]
-                )
+            import onnxruntime as ort
+
+            return ort.InferenceSession(
+                str(self.model_path), providers=["CPUExecutionProvider"]
+            )
         raise ValueError(f"Unknown execution target: {target} (expected cpu, npu, or auto)")
 
     def classify(self, waveform: np.ndarray, top_k: int = 5) -> list[SoundPrediction]:
