@@ -20,8 +20,8 @@ Uno Q Linux side          uno_q/linux/
     |
     |  Wi-Fi / Tailscale, raw TCP, 16 kHz mono PCM16 in 20-1000 ms chunks
     v
-Connected hub             backend/ (computer now; phone endpoint supported)
-- environmental classifier (quantized ONNX or baseline YAMNet)
+Connected hub             backend/ or frontend/android/
+- environmental classifier (computer or Samsung quantized ONNX)
 - gated Faster-Whisper speech path (name/phrase triggers)
 - custom enrolled-sound matcher
 - profile + quiet-hours decision engine
@@ -44,7 +44,7 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 | Connected hub | classification, speech, profiles, prioritization, dashboard API | depend on cloud for alerts |
 | Uno Q Linux | capture, signal diagnostics, transport, RPC to STM32 | classify environmental events or invent alerts while disconnected |
 | STM32 | exact motor timing, ack button, LEDs | networking, ML |
-| Android app | profile editing, enrollment, event history | be required for the core demo |
+| Android app / Samsung hub | profile editing, optional quantized environmental inference | capture the continuous monitoring stream with its own microphone |
 
 ## Protocols
 
@@ -74,6 +74,7 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 | Uno Q live microphone + signal diagnostics | `uno_q/linux/audio_capture/` | Done: USB mic validated; no event inference on board |
 | Uno Q transport + hub selection | `uno_q/linux/transport/` | Done |
 | Android companion app | `frontend/android/` | Done (optional for demo) |
+| Samsung TCP inference hub | `frontend/android/app/src/main/java/com/quietcue/app/phone/` | Done; quantized YAMNet on ONNX Runtime CPU |
 | STM32 haptic firmware + RPC server | `uno_q/stm32/` | Done; App Lab firmware 0.2.0 |
 | Linux-side RPC client (alert -> motor) | `uno_q/linux/rpc_client/` | Done; real App Lab Bridge transport |
 | Board restart/reconnect lifecycle | `scripts/run_uno_q_client.sh`, `uno_q/linux/systemd/` | Done |
