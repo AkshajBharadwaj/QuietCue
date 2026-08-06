@@ -32,11 +32,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.quietcue.app.domain.ProfileCatalog
 import com.quietcue.app.domain.RuntimeState
+import com.quietcue.app.phone.PhoneInferenceServerState
 
 @Composable
 fun DashboardScreen(
     catalog: ProfileCatalog,
     runtimeState: RuntimeState,
+    phoneInferenceState: PhoneInferenceServerState,
     contentPadding: PaddingValues,
 ) {
     val profile = catalog.activeProfile
@@ -97,6 +99,22 @@ fun DashboardScreen(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatusRow(Icons.Rounded.Hearing, "Phone app", "Profile controls available", true)
                 StatusRow(
+                    Icons.Rounded.Hearing,
+                    "Phone inference server",
+                    when {
+                        phoneInferenceState.error != null -> phoneInferenceState.error
+                        phoneInferenceState.clientConnected -> {
+                            "UNO Q connected • ${phoneInferenceState.provider}" +
+                                (phoneInferenceState.inferenceMs?.let { " • ${it.toInt()} ms" } ?: "")
+                        }
+                        phoneInferenceState.modelReady -> {
+                            "Listening on TCP ${phoneInferenceState.port} • ${phoneInferenceState.provider}"
+                        }
+                        else -> "Loading the quantized sound model"
+                    },
+                    phoneInferenceState.running && phoneInferenceState.modelReady,
+                )
+                StatusRow(
                     Icons.Rounded.CloudOff,
                     "Inference hub",
                     if (runtimeState.backendConnected) {
@@ -109,12 +127,14 @@ fun DashboardScreen(
                 StatusRow(
                     Icons.Rounded.Watch,
                     "Audio source",
-                    if (runtimeState.audioSourceConnected) {
+                    if (phoneInferenceState.clientConnected) {
+                        "UNO Q microphone stream connected to this phone"
+                    } else if (runtimeState.audioSourceConnected) {
                         "WAV replay or Uno Q stream connected"
                     } else {
                         "Waiting for replay or microphone stream"
                     },
-                    runtimeState.audioSourceConnected,
+                    runtimeState.audioSourceConnected || phoneInferenceState.clientConnected,
                 )
             }
         }

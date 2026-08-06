@@ -6,13 +6,51 @@ import unittest
 from datetime import datetime
 
 from backend.audio.demo_audio import generate_tone_pcm
+from backend.audio.wav_source import AudioChunk
 from backend.communication.stream_protocol import WireMessage, read_message, write_message
 from backend.inference.demo_classifier import DemoToneSoundClassifier
 from backend.inference.pipeline import ConfirmedEvent, HubInferencePipeline
+from backend.inference.models import SoundPrediction
 from backend.profiles.defaults import get_profile
 from backend.profiles.engine import ProfileDecisionEngine
 from backend.telemetry.alert_store import AlertStateStore
 from backend.app.hub_server import QuietCueHubServer
+from uno_q.linux.rpc_client import AlertDispatcher
+from uno_q.linux.transport.hub_client import Endpoint, stream_chunks
+from uno_q.linux.transport.hub_selector import HubKind, RoutingPreference
+
+
+class ConnectedFireAlarmClassifier:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def classify_pcm16(
+        self, pcm: bytes, sample_rate: int, top_k: int = 10
+    ) -> list[SoundPrediction]:
+        self.calls += 1
+        return [SoundPrediction("Fire alarm", 0.93)]
+
+
+class RecordingHapticTransport:
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, ...]] = []
+
+    def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> bool:
+        self.calls.append(("play_haptic", pattern, intensity, repeat_count))
+        return True
+
+    def stop_haptic(self) -> bool:
+        self.calls.append(("stop_haptic",))
+        return True
+
+    def get_button_state(self) -> bool:
+        return False
+
+    def set_status_led(self, state: bool) -> bool:
+        return True
+
+    def health_check(self) -> bool:
+        return True
 
 
 class DemoPipelineTest(unittest.TestCase):
@@ -150,6 +188,41 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(
                 store.snapshot()["haptics"]["latest_result"]["health"]["transport_healthy"]
             )
+        finally:
+            server.close()
+            await server.wait_closed()
+
+    async def test_connected_hub_inference_reaches_haptic_transport_end_to_end(self) -> None:
+        profile = get_profile("home")
+        classifier = ConnectedFireAlarmClassifier()
+        hub = QuietCueHubServer(
+            lambda: HubInferencePipeline(classifier),
+            ProfileDecisionEngine(profile),
+            AlertStateStore(profile),
+        )
+        server = await asyncio.start_server(hub.handle_client, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        transport = RecordingHapticTransport()
+        now_ms = int(time.time() * 1_000)
+        pcm = generate_tone_pcm("fire_alarm", 0.5)
+        chunks = (
+            AudioChunk(0, now_ms, pcm),
+            AudioChunk(1, now_ms + 500, pcm),
+        )
+        try:
+            await stream_chunks(
+                chunks,
+                [Endpoint("pc", HubKind.COPILOT_PC, "127.0.0.1", port)],
+                RoutingPreference.AUTO,
+                "connected-hub-haptic-test",
+                "",
+                [],
+                compact=True,
+                alert_dispatcher=AlertDispatcher(transport),
+            )
+
+            self.assertEqual(classifier.calls, 2)
+            self.assertIn(("play_haptic", "urgent_repeat", 255, 0), transport.calls)
         finally:
             server.close()
             await server.wait_closed()

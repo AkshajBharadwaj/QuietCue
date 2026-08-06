@@ -1,7 +1,12 @@
 """Unit tests for the numpy YAMNet feature frontend."""
 
-import numpy as np
-import pytest
+import unittest
+
+try:
+    import numpy as np
+    import pytest
+except ModuleNotFoundError as exc:
+    raise unittest.SkipTest("numpy and pytest are optional ONNX test dependencies") from exc
 
 from backend.inference import audio_features as af
 

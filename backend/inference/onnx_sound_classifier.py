@@ -1,4 +1,4 @@
-"""Production environmental sound classifier: YamNet ONNX on ONNX Runtime.
+"""Production environmental sound classifier: quantized YamNet on ONNX Runtime.
 
 Runs the Qualcomm AI Hub export of YAMNet (input: 1x1x96x64 log-mel patches,
 output: 1x521 AudioSet class scores) through ONNX Runtime. Execution target is
@@ -27,10 +27,10 @@ LOGGER = logging.getLogger("quietcue.onnx_classifier")
 
 DEFAULT_MODEL_DIR = Path(__file__).resolve().parents[2] / "models"
 DEFAULT_MODEL_PATH = (
-    DEFAULT_MODEL_DIR / "source" / "yamnet-onnx-float" / "yamnet-onnx-float" / "yamnet.onnx"
+    DEFAULT_MODEL_DIR / "source" / "yamnet-onnx-w8a8" / "yamnet-onnx-w8a8" / "yamnet.onnx"
 )
 DEFAULT_LABELS_PATH = (
-    DEFAULT_MODEL_DIR / "source" / "yamnet-onnx-float" / "yamnet-onnx-float" / "labels.txt"
+    DEFAULT_MODEL_DIR / "source" / "yamnet-onnx-w8a8" / "yamnet-onnx-w8a8" / "labels.txt"
 )
 
 

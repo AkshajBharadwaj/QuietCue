@@ -2,10 +2,14 @@
 
 import importlib.util
 import sys
+import unittest
 from types import SimpleNamespace
 
-import numpy as np
-import pytest
+try:
+    import numpy as np
+    import pytest
+except ModuleNotFoundError as exc:
+    raise unittest.SkipTest("numpy and pytest are optional ONNX test dependencies") from exc
 
 from backend.inference.event_mapper import _EVENT_TERMS, _SPEECH_TERMS
 from backend.inference.onnx_sound_classifier import (

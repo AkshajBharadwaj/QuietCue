@@ -46,6 +46,7 @@ class HubInferenceResult:
     inference_ms: float
     total_ms: float
     top_predictions: tuple[dict[str, object], ...]
+    inference_source: str
 
     def to_wire(self) -> dict[str, object]:
         return {
@@ -59,6 +60,7 @@ class HubInferenceResult:
             "inference_ms": self.inference_ms,
             "total_ms": self.total_ms,
             "top_predictions": list(self.top_predictions),
+            "inference_source": self.inference_source,
         }
 
 
@@ -163,6 +165,7 @@ class HubInferencePipeline:
             inference_ms=round(inference_ms, 2),
             total_ms=round(total_ms, 2),
             top_predictions=top_predictions,
+            inference_source="connected_hub",
         )
 
 

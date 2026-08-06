@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.quietcue.app.data.ProfileJsonCodec
 import com.quietcue.app.domain.ProfileDefaults
+import com.quietcue.app.phone.PhoneInferenceStatus
 
 private enum class MainTab(val label: String) {
     HOME("Home"),
@@ -49,6 +50,7 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
     val catalog by viewModel.catalog.collectAsStateWithLifecycle()
     val memoryBank by viewModel.memoryBank.collectAsStateWithLifecycle()
     val runtimeState by viewModel.runtimeState.collectAsStateWithLifecycle()
+    val phoneInferenceState by PhoneInferenceStatus.state.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTabName by rememberSaveable { mutableStateOf(MainTab.HOME.name) }
@@ -200,6 +202,7 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
             MainTab.HOME -> DashboardScreen(
                 catalog = catalog,
                 runtimeState = runtimeState,
+                phoneInferenceState = phoneInferenceState,
                 contentPadding = contentPadding,
             )
             MainTab.PROFILES -> ProfilesScreen(

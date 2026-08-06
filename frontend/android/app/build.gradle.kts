@@ -17,6 +17,14 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    sourceSets["main"].assets.srcDir(
+        "../../../models/source/yamnet-onnx-w8a8/yamnet-onnx-w8a8",
+    )
+
+    androidResources {
+        noCompress += setOf("onnx", "data")
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -48,6 +56,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
 
     val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
     implementation(composeBom)

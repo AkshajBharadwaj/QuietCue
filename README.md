@@ -32,11 +32,16 @@ haptic client.
 
 ## Live Uno Q microphone
 
-The Uno Q can now capture a USB/ALSA microphone continuously, perform lightweight
-voice and loudness analysis, and stream 16 kHz mono PCM16 chunks to exactly one
-inference hub. The hub has an optional gated Faster-Whisper speech path for
-configured names and phrases; it runs in the background so environmental
-classification does not wait for transcription.
+The Uno Q continuously captures a USB/ALSA microphone and streams 16 kHz mono
+PCM16 to exactly one reachable Samsung/PC hub. Environmental and speech
+inference happen on that connected device; the Uno Q only computes inexpensive
+signal-health metadata such as RMS, peak level, and voice activity.
+
+The hub maps model scores to QuietCue events, applies the active profile, and
+returns compact alert commands. The Uno Q sends those commands through the
+Arduino App Lab Bridge to the STM32 vibration firmware. If the hub is
+unreachable, the client reconnects with bounded backoff and does not guess at
+safety-critical events locally.
 
 Profile-approved alerts return over the same connection and are delivered to
 the STM32 through the real Arduino App Lab Bridge. Hardware results are reported
@@ -45,8 +50,11 @@ from “delivered to wearable.” The board service reconnects automatically aft
 hub, Wi-Fi, microphone, App Lab, or process interruptions.
 
 See [`docs/UNO_Q_MICROPHONE.md`](docs/UNO_Q_MICROPHONE.md) for microphone
-detection, level checks, live streaming, local speech-model setup, privacy, and
+detection, level checks, live streaming, connected speech-model setup, privacy, and
 the current Copilot-versus-Samsung routing boundary.
+
+See [`docs/PROJECT_STATUS_2026-08-06.md`](docs/PROJECT_STATUS_2026-08-06.md)
+for the verified implementation and hardware boundary.
 
 ## Develop without connected hardware
 

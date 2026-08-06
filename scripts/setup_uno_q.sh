@@ -5,9 +5,8 @@
 #   QUIETCUE_REPO_URL=<git-url> ./setup_uno_q.sh     # first time, clones the repo
 #   ~/projects/QuietCue/scripts/setup_uno_q.sh       # later, re-checks the environment
 #
-# Nothing heavy is installed here: the Uno Q client uses the Python standard
-# library plus the system `arecord` binary. Configuration is via environment
-# variables only -- never hardcode IPs or tokens in this file.
+# This script performs read-only dependency checks. Model dependencies belong on
+# the connected phone/computer inference hub, not on the Uno Q.
 set -euo pipefail
 
 PROJECT_DIR="${QUIETCUE_PROJECT_DIR:-$HOME/projects/QuietCue}"
@@ -27,7 +26,7 @@ if [ ! -d "$PROJECT_DIR" ]; then
 fi
 echo "repo: $PROJECT_DIR"
 
-# 2. Python (standard library only; 3.10+ recommended)
+# 2. Python (3.10+ recommended)
 if ! command -v python3 >/dev/null 2>&1; then
     echo "ERROR: python3 not found on the board." >&2
     exit 1
@@ -52,7 +51,7 @@ cat <<'EOF'
 Setup complete. Next steps:
   1. Export the shared development token (same value as on the hub):
        export QUIETCUE_PAIRING_TOKEN='<shared-development-token>'
-  2. Run a 3-second edge-only microphone health check:
+  2. Run a 3-second microphone signal health check (no classification):
        python3 -m uno_q.linux.transport.hub_client --microphone \
          --input-device 'plughw:CARD=Microphone,DEV=0' --max-chunks 6 --compact
   3. Stream to the hub with scripts/deploy_uno_q.sh --local (see that script).
