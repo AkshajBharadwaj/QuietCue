@@ -81,6 +81,7 @@ client was NOT started automatically. To configure, create ~/.quietcue_env:
 then re-run: ./scripts/deploy_uno_q.sh --local
 EOF
     systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
+    systemctl --user reset-failed "$SERVICE_NAME" 2>/dev/null || true
     exit 0
 fi
 
