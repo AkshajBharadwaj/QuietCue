@@ -21,6 +21,9 @@ models/**/*.dlc
 models/**/*.bin
 models/**/*.pt
 models/**/*.pb
+models/**/*.data
+models/**/*.zip
+models/converted/qnn_cache*/
 
 # TensorFlow downloads pretrained models here when configured locally.
 .model-cache/

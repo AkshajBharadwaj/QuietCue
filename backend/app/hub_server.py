@@ -224,6 +224,28 @@ def _pipeline_factory(
             return build(YamnetSoundClassifier())
 
         return create_yamnet
+    if classifier == "onnx":
+        def create_onnx() -> HubInferencePipeline:
+            from backend.inference.onnx_sound_classifier import (
+                DEFAULT_LABELS_PATH,
+                DEFAULT_MODEL_PATH,
+                OnnxSoundClassifier,
+            )
+
+            sound_classifier = OnnxSoundClassifier(
+                model_path=os.environ.get("QUIETCUE_ONNX_MODEL", DEFAULT_MODEL_PATH),
+                labels_path=os.environ.get("QUIETCUE_ONNX_LABELS", DEFAULT_LABELS_PATH),
+                target=os.environ.get("QUIETCUE_ONNX_TARGET", "auto"),
+                cache_dir=os.environ.get("QUIETCUE_ONNX_CACHE_DIR") or None,
+            )
+            LOGGER.info(
+                "ONNX classifier active: model=%s provider=%s",
+                sound_classifier.model_path.name,
+                sound_classifier.active_provider,
+            )
+            return build(sound_classifier)
+
+        return create_onnx
     raise ValueError(f"Unknown classifier: {classifier}")
 
 
@@ -302,7 +324,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--state-host", default="127.0.0.1")
     parser.add_argument("--state-port", type=int, default=DEFAULT_STATE_PORT)
-    parser.add_argument("--classifier", choices=("demo", "yamnet"), default="yamnet")
+    parser.add_argument(
+        "--classifier",
+        choices=("demo", "yamnet", "onnx"),
+        default=os.environ.get("QUIETCUE_CLASSIFIER", "onnx"),
+    )
     parser.add_argument("--profile", choices=tuple(all_profiles()), default="home")
     parser.add_argument(
         "--speech-model",

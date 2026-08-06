@@ -1,0 +1,75 @@
+{
+  "host": {
+    "machine": "ARM64",
+    "processor": "ARMv8 (64-bit) Family 8 Model 1 Revision 201, Qualcomm Technologies Inc",
+    "python": "3.12.10"
+  },
+  "chunk": {
+    "seconds": 1.0,
+    "sample_rate": 16000,
+    "content": "1 kHz sine"
+  },
+  "frontend_ms_per_chunk": 0.401,
+  "variants": {
+    "fp32-cpu": {
+      "runs": 100,
+      "mean_ms": 30.46,
+      "p50_ms": 9.21,
+      "p95_ms": 86.72,
+      "min_ms": 2.27,
+      "max_ms": 243.61,
+      "top_prediction": {
+        "label": "Beep, bleep",
+        "confidence": 0.9806
+      },
+      "active_provider": "CPUExecutionProvider",
+      "model": "models\\source\\yamnet-onnx-float\\yamnet-onnx-float\\yamnet.onnx",
+      "rss_mb": 81.9
+    },
+    "fp32-npu": {
+      "runs": 100,
+      "mean_ms": 1.45,
+      "p50_ms": 1.29,
+      "p95_ms": 1.74,
+      "min_ms": 1.03,
+      "max_ms": 9.89,
+      "top_prediction": {
+        "label": "Beep, bleep",
+        "confidence": 0.9804
+      },
+      "active_provider": "QNN",
+      "model": "models\\source\\yamnet-onnx-float\\yamnet-onnx-float\\yamnet.onnx",
+      "rss_mb": 411.4
+    },
+    "w8a8-cpu": {
+      "runs": 100,
+      "mean_ms": 16.2,
+      "p50_ms": 2.99,
+      "p95_ms": 74.26,
+      "min_ms": 1.08,
+      "max_ms": 100.32,
+      "top_prediction": {
+        "label": "Beep, bleep",
+        "confidence": 0.978
+      },
+      "active_provider": "CPUExecutionProvider",
+      "model": "models\\source\\yamnet-onnx-w8a8\\yamnet-onnx-w8a8\\yamnet.onnx",
+      "rss_mb": 246.4
+    },
+    "w8a8-npu": {
+      "runs": 100,
+      "mean_ms": 1.33,
+      "p50_ms": 0.99,
+      "p95_ms": 3.63,
+      "min_ms": 0.76,
+      "max_ms": 6.26,
+      "top_prediction": {
+        "label": "Beep, bleep",
+        "confidence": 0.978
+      },
+      "active_provider": "QNN",
+      "model": "models\\source\\yamnet-onnx-w8a8\\yamnet-onnx-w8a8\\yamnet.onnx",
+      "rss_mb": 419.0
+    }
+  }
+}

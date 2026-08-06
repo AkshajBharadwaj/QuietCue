@@ -1,0 +1,111 @@
+{
+  "latency": {
+    "mean_ms": 0.0,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "p99_ms": 0.0,
+    "min_ms": 0.0,
+    "max_ms": 0.0
+  },
+  "throughput_fps": 0.0,
+  "power_mw": 1770.0,
+  "memory_peak_mb": 0.0,
+  "memory_avg_mb": 0.0,
+  "utilization": {
+    "cpu": 1.5,
+    "gpu": 0.0,
+    "npu": 0.0
+  },
+  "layers": [
+    {
+      "name": "model",
+      "op_type": "composite",
+      "runtime": "npu",
+      "latency_ms": 0.0,
+      "memory_mb": 0.0
+    }
+  ],
+  "device": {
+    "chipset": "AMD EPYC 7B12",
+    "platform": "windows",
+    "cpu_cores": 16,
+    "cpu_arch": "x86_64",
+    "cpu_freq_ghz": 1.0,
+    "gpu_model": "Red Hat, Inc. Virtio SCSI",
+    "gpu_tflops": null,
+    "npu_model": "Hexagon NPU",
+    "npu_tops": null,
+    "npu_tops_note": "TOPS data unavailable for this chipset",
+    "ram_gb": 125.8,
+    "storage_gb": 95.8,
+    "os_version": "Ubuntu 24.04.4 LTS",
+    "sdk_path": null,
+    "sdk_status": "SDK installed on remote server",
+    "sdk_version": "v2.41.0.251128",
+    "sdk_source": null,
+    "available_runtimes": [
+      "cpu"
+    ],
+    "gpu_backend_available": false,
+    "board_id": null,
+    "recommended_sdk": null,
+    "soc_sku": null,
+    "htp_arch": null,
+    "dsp_abi": null,
+    "sdk_abi_band": null,
+    "min_qairt_version": null,
+    "firmware_band": null,
+    "memory_tier": null,
+    "thermal_envelope": null,
+    "supports_int4": null,
+    "aihub_slug": null
+  },
+  "runtime_used": "npu",
+  "duration_s": 10.0,
+  "profiling_level": "detailed",
+  "linting_layers": [],
+  "linting_total_cycles": 0,
+  "linting_bottleneck_count": 0,
+  "linting_optimization_hints": [],
+  "qhas_chrometrace_path": null,
+  "qhas_htp_json_path": null,
+  "measurement_notes": {
+    "latency": "not_measured:parser_no_match",
+    "layers": "synthetic_composite:no_diagview_csv",
+    "memory": "not_measured:process exited before first sample",
+    "utilization": "measured:psutil_cpu",
+    "power": "estimated:host_thermal_model"
+  },
+  "decisions": [
+    {
+      "category": "runtime",
+      "choice": "profiler=qairt (.dlc)",
+      "reason": "SNPE/QAIRT container (.dlc) \u2014 profiled via snpe-net-run, honouring runtime='npu'.",
+      "severity": "info",
+      "detail": {
+        "run_id": "44ba2854",
+        "sdk_adapter": "auto",
+        "runtime": "npu"
+      }
+    }
+  ],
+  "run_id": "44ba2854",
+  "provider": null,
+  "ui": "### Profile \u2014 runtime: **NPU** \u00b7 level: `detailed`\n\n**Latency**\n\n| Statistic | Value (ms) |\n| :--- | ---: |\n| Mean | 0.00 |\n| Median (p50) | 0.00 |\n| p95 | 0.00 |\n| p99 | 0.00 |\n| Min | 0.00 |\n| Max | 0.00 |\n\n**Throughput:** 0 FPS  \u00b7  **Power:** 1770 mW  \u00b7  **Memory:** peak 0 MB / avg 0 MB\n\n**Compute utilisation**\n`\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591`   0% NPU\n`\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591`   0% GPU\n`\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591`   2% CPU\n\n\n**Decisions & Recommendations**\n- - `runtime`: **profiler=qairt (.dlc)** \u2014 SNPE/QAIRT container (.dlc) \u2014 profiled via snpe-net-run, honouring runtime='npu'.",
+  "tips": [
+    "High p99/mean ratio (>2x) usually means thermal throttling. Run a 30-second pre-warm before profiling.",
+    "Profile in `linting` mode to find HTP bottlenecks (cycle-level resource overlap per op).",
+    "QHAS profiling produces a chrometrace JSON viewable in chrome://tracing.",
+    "Profile with `--perf_profile burst` for camera-like spike loads, `high_performance` for sustained loads."
+  ],
+  "suggestions": [
+    {
+      "title": "Run linting profile to find HTP bottlenecks",
+      "rationale": "Detailed profiling shows ms timings; linting profiling shows per-op cycle counts and resource overlap. Use it to find ops with low utilisation that bottleneck the pipeline.",
+      "severity": "info",
+      "confidence": "high",
+      "command": "profile_workload(model, profiling_level=\"linting\")",
+      "category": "optimisation"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "allocation": {
+    "model": "cpu"
+  },
+  "projected_latency_ms": 0.0,
+  "projected_power_mw": 885.0,
+  "projected_memory_mb": 0.0,
+  "power_mode": "balanced",
+  "fallback_layers": [
+    "model"
+  ],
+  "npu_utilization_pct": 0.0,
+  "gpu_utilization_pct": 0.0,
+  "cpu_utilization_pct": 100.0,
+  "decisions": [
+    {
+      "category": "power_mode",
+      "choice": "balanced",
+      "reason": "NPU-compatible ops -> NPU; unsupported ops fall back to CPU (default).",
+      "recommendation": "Change power_mode to 'performance' / 'balanced' / 'efficiency' to trade off latency vs power.",
+      "severity": "info",
+      "detail": {
+        "run_id": "f6803117",
+        "npu_utilization_pct": 0.0
+      }
+    },
+    {
+      "category": "op_allocation",
+      "choice": "1 op(s) forced to CPU",
+      "reason": "The NPU/HTP does not support op types: composite.",
+      "recommendation": "Replace unsupported ops with HTP-friendly equivalents (see quad.compiler.op_coverage) or accept the CPU-fallback latency.",
+      "severity": "warn",
+      "detail": {
+        "run_id": "f6803117",
+        "fallback_layers": [
+          "model"
+        ],
+        "unsupported_op_types": [
+          "composite"
+        ]
+      }
+    }
+  ],
+  "run_id": "f6803117",
+  "ui": "### Allocation \u2014 `balanced` power mode\n\n|  |  |\n| :--- | :--- |\n| Projected latency | 0.00 ms |\n| Projected power | 885 mW |\n| Projected memory | 0 MB |\n\n**Compute distribution**\n`\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591`   0% NPU\n`\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591`   0% GPU\n`\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588`   100% CPU\n\n\u26a0 **1 layer(s) fall back to CPU** (unsupported on NPU): `model`\n\n**Decisions & Recommendations**\n- - `power_mode`: **balanced** \u2014 NPU-compatible ops -> NPU; unsupported ops fall back to CPU (default).\n    - _Tip:_ Change power_mode to 'performance' / 'balanced' / 'efficiency' to trade off latency vs power.\n- ! `op_allocation`: **1 op(s) forced to CPU** \u2014 The NPU/HTP does not support op types: composite.\n    - _Tip:_ Replace unsupported ops with HTP-friendly equivalents (see quad.compiler.op_coverage) or accept the CPU-fallback latency.",
+  "tips": [
+    "Replace unsupported ops with HTP-friendly equivalents (see quad.compiler.op_coverage) or accept the CPU-fallback latency.",
+    "Change power_mode to 'performance' / 'balanced' / 'efficiency' to trade off latency vs power.",
+    "Linting/QHAS profiles don't have ms-per-layer timings \u2014 orchestrate auto-reprofiles in `detailed` mode for you.",
+    "Custom UDOs (User-Defined Operations) let you implement an unsupported op on HTP \u2014 see `templates/snpe/udo/`."
+  ]
+}

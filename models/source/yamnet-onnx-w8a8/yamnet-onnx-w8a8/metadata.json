@@ -1,0 +1,45 @@
+{
+    "model_id": "yamnet",
+    "model_name": "YamNet",
+    "runtime": "onnx",
+    "precision": "w8a8",
+    "tool_versions": {
+        "qairt": "2.45.0.260326154327",
+        "onnx_runtime": "1.27.1"
+    },
+    "model_files": {
+        "yamnet.onnx": {
+            "inputs": {
+                "audio": {
+                    "shape": [
+                        1,
+                        1,
+                        96,
+                        64
+                    ],
+                    "dtype": "uint8",
+                    "quantization_parameters": {
+                        "scale": 0.04793788492679596,
+                        "zero_point": 144
+                    }
+                }
+            },
+            "outputs": {
+                "class_scores": {
+                    "shape": [
+                        1,
+                        521
+                    ],
+                    "dtype": "uint8",
+                    "quantization_parameters": {
+                        "scale": 0.7587278485298157,
+                        "zero_point": 190
+                    }
+                }
+            }
+        }
+    },
+    "supplementary_files": {
+        "labels.txt": "Mapping of model prediction indices -> string labels."
+    }
+}

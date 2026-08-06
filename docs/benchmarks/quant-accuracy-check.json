@@ -1,0 +1,62 @@
+{
+  "1kHz sine": {
+    "fp32_top1": [
+      "Beep, bleep",
+      0.924
+    ],
+    "w8a8_top1": [
+      "Beep, bleep",
+      0.907
+    ],
+    "top1_match": true,
+    "top5_overlap": 5
+  },
+  "chirp 300-3000Hz": {
+    "fp32_top1": [
+      "Alarm",
+      0.423
+    ],
+    "w8a8_top1": [
+      "Synthesizer",
+      0.319
+    ],
+    "top1_match": false,
+    "top5_overlap": 2
+  },
+  "white noise": {
+    "fp32_top1": [
+      "White noise",
+      0.494
+    ],
+    "w8a8_top1": [
+      "White noise",
+      0.5
+    ],
+    "top1_match": true,
+    "top5_overlap": 4
+  },
+  "am tone 600Hz/4Hz": {
+    "fp32_top1": [
+      "Sine wave",
+      0.998
+    ],
+    "w8a8_top1": [
+      "Sine wave",
+      0.998
+    ],
+    "top1_match": true,
+    "top5_overlap": 5
+  },
+  "silence": {
+    "fp32_top1": [
+      "Silence",
+      1.0
+    ],
+    "w8a8_top1": [
+      "Silence",
+      0.99
+    ],
+    "top1_match": true,
+    "top5_overlap": 4
+  }
+}
