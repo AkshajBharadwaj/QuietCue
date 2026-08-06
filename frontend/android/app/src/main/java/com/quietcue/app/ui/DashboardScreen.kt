@@ -153,7 +153,11 @@ fun DashboardScreen(
                             )
                             Text(
                                 "${alert.totalLatencyMs} ms • ${alert.pattern.replace('_', ' ')}" +
-                                    if (alert.simulated) " • simulated haptic" else "",
+                                    when {
+                                        alert.fallbackToPhone -> " • check phone for details"
+                                        alert.simulated -> " • awaiting haptic delivery"
+                                        else -> " • delivered to wearable"
+                                    },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }

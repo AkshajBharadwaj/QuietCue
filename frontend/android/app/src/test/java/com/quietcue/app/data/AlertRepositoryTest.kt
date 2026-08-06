@@ -25,7 +25,8 @@ class AlertRepositoryTest {
                     "source_label": "Fire alarm",
                     "total_after_capture_ms": 41,
                     "requires_ack": true,
-                    "simulated": true
+                    "simulated": true,
+                    "fallback_to_phone": true
                   }
                 }
                 """.trimIndent(),
@@ -37,5 +38,6 @@ class AlertRepositoryTest {
         assertEquals("Home", state.backendProfileName)
         assertEquals("Fire Alarm", state.latestAlert?.displayName)
         assertEquals(41, state.latestAlert?.totalLatencyMs)
+        assertTrue(state.latestAlert?.fallbackToPhone == true)
     }
 }

@@ -16,7 +16,7 @@ does not sit in the safety-critical sound-to-haptic path.
 - Built-in profile reset and custom profile deletion.
 - Local validation and unit tests for defaults, times, and persistence encoding.
 - Read-only local hub status, latest event, confidence, latency, backend profile,
-  and simulated haptic output on the dashboard.
+  and hardware-confirmed haptic output on the dashboard when a Uno Q is connected.
 - A constrained local profile assistant that turns a situation description into
   a complete draft for explicit user review.
 - Custom sound enrollment using three two-second examples, one background sample,

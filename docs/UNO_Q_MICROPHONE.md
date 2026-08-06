@@ -74,6 +74,32 @@ pairing token. The current raw TCP development protocol is not encrypted.
 
 ## 3. Stream the microphone to the hub
 
+### Managed runtime (recommended)
+
+Create `~/.quietcue_env` on the Uno Q:
+
+```bash
+QUIETCUE_HUB=<copilot-or-development-host>:8765
+QUIETCUE_PAIRING_TOKEN=<same-development-token>
+QUIETCUE_ALSA_DEVICE=plughw:CARD=Microphone,DEV=0
+QUIETCUE_DEVICE_ID=uno-q-dev
+```
+
+Then deploy from the repository root on the board:
+
+```bash
+./scripts/deploy_uno_q.sh --local
+systemctl --user status quietcue-client.service
+journalctl --user -u quietcue-client.service -f
+```
+
+Deployment synchronizes and flashes the tracked App Lab firmware, then enables
+one restartable service for microphone streaming, reconnect, real haptics, and
+hardware delivery telemetry. App Lab startup performs health checks only and
+does not buzz the motor.
+
+### Foreground diagnostic
+
 On the Uno Q, use the PC's reachable LAN or Tailscale address:
 
 ```bash
@@ -85,6 +111,7 @@ python3 -m uno_q.linux.transport.hub_client \
   --pairing-token "$QUIETCUE_PAIRING_TOKEN" \
   --phrase 'Akshaj' \
   --chunk-ms 500 \
+  --haptics \
   --compact
 ```
 

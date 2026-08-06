@@ -32,13 +32,13 @@ _SEEN_EVENT_ID_LIMIT = 256
 class HapticTransport(Protocol):
     """RPC surface the STM32 firmware exposes through the Arduino bridge."""
 
-    def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> None: ...
+    def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> bool | None: ...
 
-    def stop_haptic(self) -> None: ...
+    def stop_haptic(self) -> bool | None: ...
 
     def get_button_state(self) -> bool: ...
 
-    def set_status_led(self, state: str) -> None: ...
+    def set_status_led(self, state: bool) -> bool | None: ...
 
     def health_check(self) -> bool: ...
 
@@ -50,16 +50,21 @@ class PatternPlan:
     pattern: str
     intensity: int
     repeat_count: int
-    led_state: str
 
 
 _CATEGORY_PLANS: dict[str, PatternPlan] = {
-    "emergency": PatternPlan("urgent_repeat", 100, URGENT_REPEAT_UNTIL_STOPPED, "emergency"),
-    "attention": PatternPlan("long_pulse", 80, 1, "attention"),
-    "informational": PatternPlan("two_short", 60, 1, "notice"),
+    "emergency": PatternPlan("urgent_repeat", 255, URGENT_REPEAT_UNTIL_STOPPED),
+    "attention": PatternPlan("long_pulse", 180, 1),
+    "informational": PatternPlan("two_short", 100, 1),
 }
 
 _FALLBACK_PLAN = _CATEGORY_PLANS["informational"]
+
+_STRENGTH_INTENSITIES = {
+    "gentle": 100,
+    "standard": 180,
+    "strong": 255,
+}
 
 
 @dataclass(frozen=True)
@@ -70,6 +75,7 @@ class DispatchOutcome:
     delivered: bool
     reason: str
     pattern: str
+    event_id: str = ""
 
     def to_wire(self) -> dict[str, object]:
         return {
@@ -77,6 +83,7 @@ class DispatchOutcome:
             "delivered": self.delivered,
             "reason": self.reason,
             "pattern": self.pattern,
+            "event_id": self.event_id,
         }
 
 
@@ -122,34 +129,37 @@ class AlertDispatcher:
         category = str(alert.get("category", "")) or "informational"
         plan = self._plan_for(alert, category)
 
-        event_id = alert.get("event_id")
-        if isinstance(event_id, str) and event_id:
+        event_id_value = alert.get("event_id")
+        event_id = event_id_value if isinstance(event_id_value, str) else ""
+        if event_id:
             if event_id in self._seen_event_ids:
                 self._suppressed_count += 1
-                return DispatchOutcome(event, False, "duplicate_event_id", plan.pattern)
-            self._remember_event_id(event_id)
+                return DispatchOutcome(event, False, "duplicate_event_id", plan.pattern, event_id)
 
         now = self._clock()
         cooldown = self._emergency_cooldown if category == "emergency" else self._default_cooldown
         last = self._last_delivered.get(event)
         if last is not None and (now - last) < cooldown:
             self._suppressed_count += 1
-            return DispatchOutcome(event, False, "cooldown_active", plan.pattern)
+            return DispatchOutcome(event, False, "cooldown_active", plan.pattern, event_id)
 
         try:
-            self._transport.set_status_led(plan.led_state)
-            self._transport.play_haptic(plan.pattern, plan.intensity, plan.repeat_count)
+            accepted = self._transport.play_haptic(plan.pattern, plan.intensity, plan.repeat_count)
+            if accepted is False:
+                raise RuntimeError(f"firmware refused pattern {plan.pattern!r}")
         except Exception as exc:  # noqa: BLE001 - hardware faults must not kill the stream loop.
             self._last_transport_error = f"{type(exc).__name__}: {exc}"
-            return DispatchOutcome(event, False, "transport_error", plan.pattern)
+            return DispatchOutcome(event, False, "transport_error", plan.pattern, event_id)
 
         self._last_transport_error = None
         self._last_delivered[event] = now
         self._last_delivered_event = event
         self._delivered_count += 1
+        if event_id:
+            self._remember_event_id(event_id)
         if bool(alert.get("requires_ack", False)):
             self._pending_ack_event = event
-        return DispatchOutcome(event, True, "delivered", plan.pattern)
+        return DispatchOutcome(event, True, "delivered", plan.pattern, event_id)
 
     def poll_acknowledge(self) -> bool:
         """Stop a pending acknowledgeable pattern once the button is pressed."""
@@ -159,8 +169,13 @@ class AlertDispatcher:
             pressed = bool(self._transport.get_button_state())
             if not pressed:
                 return False
-            self._transport.stop_haptic()
-            self._transport.set_status_led("idle")
+            stopped = self._transport.stop_haptic()
+            if stopped is False:
+                raise RuntimeError("firmware refused stop_haptic")
+            try:
+                self._transport.set_status_led(False)
+            except Exception:
+                pass
         except Exception as exc:  # noqa: BLE001 - hardware faults must not kill the stream loop.
             self._last_transport_error = f"{type(exc).__name__}: {exc}"
             return False
@@ -185,10 +200,16 @@ class AlertDispatcher:
 
     def _plan_for(self, alert: dict[str, object], category: str) -> PatternPlan:
         plan = _CATEGORY_PLANS.get(category, _FALLBACK_PLAN)
+        strength = alert.get("strength")
+        intensity = (
+            _STRENGTH_INTENSITIES.get(strength, plan.intensity)
+            if isinstance(strength, str)
+            else plan.intensity
+        )
         pattern = alert.get("pattern")
         if isinstance(pattern, str) and pattern:
-            return PatternPlan(pattern, plan.intensity, plan.repeat_count, plan.led_state)
-        return plan
+            return PatternPlan(pattern, intensity, plan.repeat_count)
+        return PatternPlan(plan.pattern, intensity, plan.repeat_count)
 
     def _remember_event_id(self, event_id: str) -> None:
         self._seen_event_ids[event_id] = None
@@ -199,17 +220,20 @@ class AlertDispatcher:
 class ConsoleHapticTransport:
     """Development transport that prints each RPC call instead of driving hardware."""
 
-    def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> None:
+    def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> bool:
         print(f"RPC play_haptic(pattern={pattern!r}, intensity={intensity}, repeat_count={repeat_count})")
+        return True
 
-    def stop_haptic(self) -> None:
+    def stop_haptic(self) -> bool:
         print("RPC stop_haptic()")
+        return True
 
     def get_button_state(self) -> bool:
         return False
 
-    def set_status_led(self, state: str) -> None:
+    def set_status_led(self, state: bool) -> bool:
         print(f"RPC set_status_led(state={state!r})")
+        return True
 
     def health_check(self) -> bool:
         return True

@@ -61,6 +61,29 @@ class DemoPipelineTest(unittest.TestCase):
         self.assertEqual([alert.event for alert in decisions.alerts], ["fire_alarm"])
         self.assertEqual(decisions.suppressed[0].reason, "quiet_hours")
 
+    def test_unconfigured_recognized_sound_uses_phone_fallback_cue(self) -> None:
+        engine = ProfileDecisionEngine(get_profile("sleep"))
+        event = ConfirmedEvent(
+            "custom:unconfigured",
+            0.88,
+            "enrolled: Unknown appliance",
+            "attention",
+            "long_pulse",
+            False,
+        )
+
+        decisions = engine.decide(
+            (event,),
+            captured_at_ms=1_000,
+            source_sequence=0,
+            now_ms=1_010,
+            local_datetime=datetime(2026, 8, 4, 23, 0),
+        )
+
+        self.assertEqual(decisions.alerts[0].pattern, "two_short")
+        self.assertEqual(decisions.alerts[0].strength, "gentle")
+        self.assertTrue(decisions.alerts[0].fallback_to_phone)
+
 
 class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
     async def test_audio_frame_returns_alert_command(self) -> None:
@@ -96,12 +119,37 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 ),
             )
             response = await read_message(reader)
+            event_id = response.body["alerts"][0]["event_id"]
+            await write_message(
+                writer,
+                WireMessage(
+                    "haptic_result",
+                    {
+                        "sequence": 0,
+                        "outcomes": [
+                            {
+                                "event_id": event_id,
+                                "event": "fire_alarm",
+                                "delivered": True,
+                                "reason": "delivered",
+                                "pattern": "urgent_repeat",
+                            }
+                        ],
+                        "health": {"transport_healthy": True},
+                    },
+                ),
+            )
+            await asyncio.sleep(0.02)
             writer.close()
             await writer.wait_closed()
 
             self.assertEqual(response.kind, "detection_result")
             self.assertEqual(response.body["alerts"][0]["event"], "fire_alarm")
             self.assertEqual(store.snapshot()["latest_alert"]["pattern"], "urgent_repeat")
+            self.assertFalse(store.snapshot()["latest_alert"]["simulated"])
+            self.assertTrue(
+                store.snapshot()["haptics"]["latest_result"]["health"]["transport_healthy"]
+            )
         finally:
             server.close()
             await server.wait_closed()

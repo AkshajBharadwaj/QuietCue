@@ -20,7 +20,7 @@ from Linux with `Bridge.call(name, ...)`.
 | `get_button_state` | — | `bool` | Debounced; `True` while the acknowledge button is held. |
 | `set_status_led` | `state: bool` | `bool` | Manual LED control; overridden by the emergency blink. |
 | `get_motor_pin` | — | `bool` | Reads back the physical motor-pin level (real pad sample) for bench debugging. |
-| `get_firmware_version` | — | `str` | `quietcue-haptics/0.1.1` |
+| `get_firmware_version` | — | `str` | `quietcue-haptics/0.2.0` |
 | `health_check` | — | `str` | Compact JSON: active pattern, button, uptime, counters. |
 
 The firmware also emits a fire-and-forget event to the Linux side when an
@@ -29,10 +29,11 @@ optional; polling `get_button_state` works too.
 
 ### Patterns
 
-Exactly three patterns exist, matching the haptic language in `AGENTS.md`:
+Four small patterns cover the haptic language in `AGENTS.md`:
 
 | Pattern | Category | Behavior |
 | --- | --- | --- |
+| `short_pulse` | informational | One quick 140 ms pulse. |
 | `two_short` | informational | Two 100 ms pulses. |
 | `long_pulse` | attention | One 600 ms pulse. |
 | `urgent_repeat` | emergency | Repeating triple bursts until the acknowledge button is pressed or a 30 s timeout expires. |
@@ -98,6 +99,7 @@ container and makes the Bridge call inside it. On the board:
 ```bash
 cd ~/projects/QuietCue/uno_q/stm32
 ./buzz.sh                 # status only; does not activate the motor
+./buzz.sh short_pulse     # bounded one-pulse test
 ./buzz.sh two_short       # bounded two-pulse test
 ./buzz.sh long_pulse
 ./buzz.sh urgent          # press the button, run stop, or wait for 30 s timeout
@@ -112,14 +114,15 @@ App Lab Bridge module is directly importable:
 
 ```bash
 python3 uno_q/stm32/test_haptics.py status
+python3 uno_q/stm32/test_haptics.py short_pulse
 python3 uno_q/stm32/test_haptics.py two_short
 python3 uno_q/stm32/test_haptics.py long_pulse
 python3 uno_q/stm32/test_haptics.py urgent_repeat   # press the button to ack
 python3 uno_q/stm32/test_haptics.py all
 ```
 
-Expected behavior: `two_short` buzzes twice briefly, `long_pulse` buzzes once
-for over half a second, and `urgent_repeat` keeps bursting (status LED
+Expected behavior: `short_pulse` buzzes once briefly, `two_short` buzzes twice,
+`long_pulse` buzzes once for over half a second, and `urgent_repeat` keeps bursting (status LED
 blinking) until the button is pressed or 30 seconds pass. `health_check`
 should report the active pattern while one is running.
 

@@ -27,7 +27,8 @@ Useful variants:
 
 Set `QUIETCUE_PAIRING_TOKEN` first when a real Uno Q will connect. On the
 board, use `scripts/setup_uno_q.sh` once and `scripts/deploy_uno_q.sh` to
-pull and (re)start the microphone client.
+pull, flash the tracked haptic firmware, and restart the managed microphone +
+haptic client.
 
 ## Live Uno Q microphone
 
@@ -36,6 +37,12 @@ voice and loudness analysis, and stream 16 kHz mono PCM16 chunks to exactly one
 inference hub. The hub has an optional gated Faster-Whisper speech path for
 configured names and phrases; it runs in the background so environmental
 classification does not wait for transcription.
+
+Profile-approved alerts return over the same connection and are delivered to
+the STM32 through the real Arduino App Lab Bridge. Hardware results are reported
+back to the state API so the companion app distinguishes “awaiting delivery”
+from “delivered to wearable.” The board service reconnects automatically after
+hub, Wi-Fi, microphone, App Lab, or process interruptions.
 
 See [`docs/UNO_Q_MICROPHONE.md`](docs/UNO_Q_MICROPHONE.md) for microphone
 detection, level checks, live streaming, local speech-model setup, privacy, and

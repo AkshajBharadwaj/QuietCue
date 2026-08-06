@@ -31,11 +31,16 @@ except ImportError:  # pragma: no cover - the bridge only exists on the board.
     sys.exit(2)
 
 
-PATTERNS = ("two_short", "long_pulse", "urgent_repeat")
+PATTERNS = ("short_pulse", "two_short", "long_pulse", "urgent_repeat")
 # Worst-case audible duration per pattern so `all` waits long enough between
 # patterns: urgent_repeat is capped by the firmware's 30 s timeout, but the
 # smoke test acknowledges it early via stop_haptic.
-PATTERN_SETTLE_SECONDS = {"two_short": 2.0, "long_pulse": 2.0, "urgent_repeat": 6.0}
+PATTERN_SETTLE_SECONDS = {
+    "short_pulse": 1.0,
+    "two_short": 2.0,
+    "long_pulse": 2.0,
+    "urgent_repeat": 6.0,
+}
 
 
 def call(method: str, *args: object) -> object:

@@ -11,6 +11,7 @@ data class DetectedAlert(
     val totalLatencyMs: Int,
     val requiresAcknowledgement: Boolean,
     val simulated: Boolean,
+    val fallbackToPhone: Boolean,
 ) {
     val displayName: String
         get() = if (event.startsWith("custom:") && sourceLabel.startsWith("enrolled: ")) {

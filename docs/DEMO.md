@@ -15,10 +15,10 @@ local, with visible confidence and latency.
 - Dry-run the whole script at least once. Have the no-hardware fallback
   (Step F) rehearsed too.
 
-Note on haptics: until the STM32 RPC lane lands, the hub logs
-`SIMULATED HAPTIC <pattern>` lines instead of driving the motor. The narration
-below works for both; if the motor integration is live, point at the wearable
-instead of the log line.
+The managed Uno Q runtime drives the STM32 motor through App Lab Bridge and
+reports the result to `/api/state`. Keep the no-hardware path ready as a stage
+fallback, but do not describe a motor alert as delivered until the state feed
+sets `simulated` to `false`.
 
 ## Demo script
 
@@ -52,8 +52,8 @@ Without the board mic, replay the synthetic fixture from a second terminal:
 .venv\Scripts\python.exe -m uno_q.linux.transport.hub_client fire_alarm.wav --pc 127.0.0.1:8765 --pairing-token $env:QUIETCUE_PAIRING_TOKEN
 ```
 
-Audience sees: `SIMULATED HAPTIC urgent_repeat: fire_alarm (emergency, ...)`
-in the hub log (or the wearable buzzing the urgent pattern), and the event
+Audience sees: `ALERT COMMAND urgent_repeat` followed by `HAPTIC delivered`
+in the hub log, the wearable buzzing the urgent pattern, and the event
 with confidence and latency in the state feed. Say out loud: emergency
 alerts repeat until acknowledged.
 

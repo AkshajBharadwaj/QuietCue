@@ -57,8 +57,10 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
   (`event`, `category`, `pattern`, `requires_ack`, confidence, profile).
 - **State API:** HTTP on port 8787 (`/health`, `/api/state`, profile sync
   endpoint used by the Android app).
-- **Haptic categories:** informational `two_short`, attention `long_pulse`,
+- **Haptic categories:** informational `short_pulse` or `two_short`, attention `long_pulse`,
   emergency `urgent_repeat` (repeats until acknowledged).
+- **Hardware result:** the Uno Q sends `haptic_result` after dispatch so the
+  hub records delivery, bridge health, and acknowledgement state.
 
 ## Implementation status (2026-08-05)
 
@@ -72,14 +74,14 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 | Uno Q live microphone + edge analyzer | `uno_q/linux/audio_capture/` | Done (validated with USB condenser mic) |
 | Uno Q transport + hub selection | `uno_q/linux/transport/` | Done |
 | Android companion app | `frontend/android/` | Done (optional for demo) |
-| STM32 haptic firmware + RPC server | `uno_q/stm32/` | In progress today |
-| Linux-side RPC client (alert -> motor) | `uno_q/linux/rpc_client/` | In progress today |
+| STM32 haptic firmware + RPC server | `uno_q/stm32/` | Done; App Lab firmware 0.2.0 |
+| Linux-side RPC client (alert -> motor) | `uno_q/linux/rpc_client/` | Done; real App Lab Bridge transport |
+| Board restart/reconnect lifecycle | `scripts/run_uno_q_client.sh`, `uno_q/linux/systemd/` | Done |
 | Converted/quantized models | `models/` | Being populated (QUAD INT8 lane) |
 | QUAD benchmarks | `docs/benchmarks/` | Being populated |
 
-Until the STM32 and RPC-client lanes land, the hub logs
-`SIMULATED HAPTIC <pattern>` instead of driving the motor; the rest of the
-loop is real.
+Without `--haptics`, alerts remain pending/simulated. The managed Uno Q service
+always enables haptics and reports the actual firmware result to the hub.
 
 ## Design rules (from AGENTS.md)
 
