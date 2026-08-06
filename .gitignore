@@ -25,6 +25,12 @@ models/**/*.data
 models/**/*.zip
 models/converted/qnn_cache*/
 
+# Committed deployment artifacts (small, quantized): the QUAD INT8 DLC and the
+# AI Hub w8a8 QDQ ONNX. The large fp32 source weights stay download-only.
+!models/converted/yamnet_fp32_selfcontained_quantized.dlc
+!models/source/yamnet-onnx-w8a8/yamnet-onnx-w8a8/yamnet.onnx
+!models/source/yamnet-onnx-w8a8/yamnet-onnx-w8a8/yamnet.data
+
 # TensorFlow downloads pretrained models here when configured locally.
 .model-cache/
 
