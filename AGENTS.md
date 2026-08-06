@@ -741,3 +741,10 @@ Uno Q microphone
 ```
 
 Everything else should be judged by whether it helps complete, measure, or improve that loop.
+
+### Unconfigured-sound fallback
+
+If a sound is recognized but the active profile has no rule for it, use the
+same gentle `two_short` informational cue in every profile. The companion app
+must label this cue “check phone for details.” Explicitly disabled rules still
+remain silent.

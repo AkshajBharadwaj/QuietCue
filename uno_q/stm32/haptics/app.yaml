@@ -1,3 +1,3 @@
 name: QuietCue Haptics
 icon: 📳
-description: QuietCue haptic firmware host. Flashes the STM32 pattern engine and runs a startup RPC smoke test.
+description: QuietCue haptic firmware host. Flashes the STM32 pattern engine and exposes safe Bridge RPC.

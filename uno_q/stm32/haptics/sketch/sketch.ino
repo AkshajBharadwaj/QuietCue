@@ -32,7 +32,7 @@ static const uint8_t PIN_MOTOR = 6;       // PWM-capable output to the MOSFET ga
 static const uint8_t PIN_BUTTON = 2;      // Acknowledge button to GND, uses INPUT_PULLUP.
 static const uint8_t PIN_STATUS_LED = 4;  // Status LED through a ~220 ohm resistor.
 
-static const char FIRMWARE_VERSION[] = "quietcue-haptics/0.1.1";
+static const char FIRMWARE_VERSION[] = "quietcue-haptics/0.2.0";
 
 // A pattern is a fixed sequence of motor on/off steps; the whole sequence may
 // repeat. The final off time of a sequence doubles as the gap before the next
@@ -42,7 +42,8 @@ struct HapticStep {
   uint16_t off_ms;
 };
 
-// Informational: two short pulses.
+// Informational alternatives: one quick pulse or two distinct quick pulses.
+static const HapticStep SHORT_PULSE_STEPS[] = {{140, 300}};
 static const HapticStep TWO_SHORT_STEPS[] = {{100, 100}, {100, 350}};
 // Attention: one longer pulse.
 static const HapticStep LONG_PULSE_STEPS[] = {{600, 400}};
@@ -57,6 +58,7 @@ static const uint16_t URGENT_LED_BLINK_MS = 150;
 
 enum HapticPattern : uint8_t {
   PATTERN_NONE = 0,
+  PATTERN_SHORT_PULSE,
   PATTERN_TWO_SHORT,
   PATTERN_LONG_PULSE,
   PATTERN_URGENT_REPEAT,
@@ -134,6 +136,11 @@ static bool startPattern(HapticPattern pattern, int intensity, int repeat_count)
   uint32_t deadline = 0;
 
   switch (pattern) {
+    case PATTERN_SHORT_PULSE:
+      steps = SHORT_PULSE_STEPS;
+      step_count = 1;
+      cycles = clampRepeat(repeat_count);
+      break;
     case PATTERN_TWO_SHORT:
       steps = TWO_SHORT_STEPS;
       step_count = 2;
@@ -228,7 +235,9 @@ static void updateButton(uint32_t now) {
 }
 
 static void updateStatusLed(uint32_t now) {
-  bool led = manual_led_state;
+  // Finite patterns illuminate the LED only while their state is active, so
+  // the LED always turns off when the motor sequence completes.
+  bool led = manual_led_state || haptic.pattern != PATTERN_NONE;
   if (haptic.pattern == PATTERN_URGENT_REPEAT) {
     led = (now / URGENT_LED_BLINK_MS) % 2 == 0;
   }
@@ -237,6 +246,8 @@ static void updateStatusLed(uint32_t now) {
 
 static const char *patternName(HapticPattern pattern) {
   switch (pattern) {
+    case PATTERN_SHORT_PULSE:
+      return "short_pulse";
     case PATTERN_TWO_SHORT:
       return "two_short";
     case PATTERN_LONG_PULSE:
@@ -255,7 +266,9 @@ static const char *patternName(HapticPattern pattern) {
 
 bool play_haptic(String pattern, int intensity, int repeat_count) {
   HapticPattern requested;
-  if (pattern == "two_short") {
+  if (pattern == "short_pulse") {
+    requested = PATTERN_SHORT_PULSE;
+  } else if (pattern == "two_short") {
     requested = PATTERN_TWO_SHORT;
   } else if (pattern == "long_pulse") {
     requested = PATTERN_LONG_PULSE;

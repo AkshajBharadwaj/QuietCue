@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploy the latest QuietCue code to the Uno Q and (re)start the microphone
-# client. Two ways to run it:
+# Deploy the latest QuietCue code, App Lab firmware, and restartable runtime to
+# the Uno Q. Two ways to run it:
 #
 #   From the development machine (pushes over SSH, then runs itself remotely):
 #     ./scripts/deploy_uno_q.sh arduino@<uno-q-tailscale-ip>
@@ -15,11 +15,13 @@
 #   QUIETCUE_PAIRING_TOKEN  shared development token (same as the hub)
 #   QUIETCUE_ALSA_DEVICE    ALSA capture device (default plughw:CARD=Microphone,DEV=0)
 #
-# GitHub is the source of truth: this script only ever `git pull`s the board
-# clone. Never edit code directly on the Uno Q.
+# GitHub is the source of truth. The board clone is deployed into App Lab and a
+# user systemd service; no long-running process is managed with nohup.
 set -euo pipefail
 
 PROJECT_DIR="${QUIETCUE_PROJECT_DIR:-$HOME/projects/QuietCue}"
+APP_DIR="${QUIETCUE_HAPTICS_APP_DIR:-$HOME/ArduinoApps/quietcue-haptics}"
+SERVICE_NAME="quietcue-client.service"
 
 if [ "${1:-}" != "--local" ]; then
     TARGET="${1:-${UNO_Q_HOST:-}}"
@@ -44,9 +46,28 @@ fi
 
 echo "== QuietCue board deploy: $(git rev-parse --short HEAD) =="
 
-# Stop any running client before starting a fresh one.
-pkill -f 'uno_q.linux.transport.hub_client' 2>/dev/null && echo "Stopped previous client." || true
-sleep 1
+if [ ! -d "$APP_DIR" ]; then
+    echo "ERROR: QuietCue App Lab app is not installed at $APP_DIR" >&2
+    echo "Import uno_q/stm32/haptics once in Arduino App Lab, then retry." >&2
+    exit 1
+fi
+
+echo "Synchronizing the tracked App Lab app..."
+install -m 0644 uno_q/stm32/haptics/app.yaml "$APP_DIR/app.yaml"
+install -d "$APP_DIR/python" "$APP_DIR/sketch"
+install -m 0644 uno_q/stm32/haptics/python/main.py "$APP_DIR/python/main.py"
+install -m 0644 uno_q/stm32/haptics/sketch/sketch.ino "$APP_DIR/sketch/sketch.ino"
+install -m 0644 uno_q/stm32/haptics/sketch/sketch.yaml "$APP_DIR/sketch/sketch.yaml"
+
+echo "Restarting App Lab to compile/flash the tracked firmware..."
+arduino-app-cli app restart "$APP_DIR"
+
+install -d "$HOME/.config/systemd/user"
+install -m 0644 \
+    uno_q/linux/systemd/quietcue-client.service \
+    "$HOME/.config/systemd/user/$SERVICE_NAME"
+systemctl --user daemon-reload
+systemctl --user enable "$SERVICE_NAME" >/dev/null
 
 if [ -z "${QUIETCUE_HUB:-}" ]; then
     cat >&2 <<'EOF'
@@ -59,6 +80,7 @@ client was NOT started automatically. To configure, create ~/.quietcue_env:
 
 then re-run: ./scripts/deploy_uno_q.sh --local
 EOF
+    systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
     exit 0
 fi
 
@@ -66,23 +88,13 @@ if [ -z "${QUIETCUE_PAIRING_TOKEN:-}" ]; then
     echo "WARNING: QUIETCUE_PAIRING_TOKEN is not set; connecting without a token." >&2
 fi
 
-ALSA_DEVICE="${QUIETCUE_ALSA_DEVICE:-plughw:CARD=Microphone,DEV=0}"
-LOG_FILE="$HOME/quietcue-client.log"
+chmod +x scripts/run_uno_q_client.sh uno_q/stm32/buzz.sh
+systemctl --user restart "$SERVICE_NAME"
+sleep 3
 
-echo "Starting microphone client -> hub $QUIETCUE_HUB (device $ALSA_DEVICE)"
-nohup python3 -m uno_q.linux.transport.hub_client \
-    --microphone \
-    --input-device "$ALSA_DEVICE" \
-    --pc "$QUIETCUE_HUB" \
-    --pairing-token "${QUIETCUE_PAIRING_TOKEN:-}" \
-    --compact \
-    >"$LOG_FILE" 2>&1 &
-
-sleep 2
-if pgrep -f 'uno_q.linux.transport.hub_client' >/dev/null; then
-    echo "Client running. Logs: tail -f $LOG_FILE"
-else
-    echo "ERROR: client exited immediately. Last log lines:" >&2
-    tail -n 20 "$LOG_FILE" >&2 || true
-    exit 1
-fi
+echo
+echo "== Runtime status =="
+systemctl --user --no-pager --full status "$SERVICE_NAME" || true
+echo
+echo "Logs: journalctl --user -u $SERVICE_NAME -f"
+echo "Haptic status: cd $PROJECT_DIR/uno_q/stm32 && ./buzz.sh status"

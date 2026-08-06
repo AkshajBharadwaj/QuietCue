@@ -13,17 +13,20 @@ class FakeHapticTransport:
         self.button_pressed = False
         self.healthy = True
 
-    def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> None:
+    def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> bool:
         self.calls.append(("play_haptic", pattern, intensity, repeat_count))
+        return True
 
-    def stop_haptic(self) -> None:
+    def stop_haptic(self) -> bool:
         self.calls.append(("stop_haptic",))
+        return True
 
     def get_button_state(self) -> bool:
         return self.button_pressed
 
-    def set_status_led(self, state: str) -> None:
+    def set_status_led(self, state: bool) -> bool:
         self.calls.append(("set_status_led", state))
+        return True
 
     def health_check(self) -> bool:
         return self.healthy
@@ -46,6 +49,7 @@ def _alert(
     pattern: str = "long_pulse",
     requires_ack: bool = False,
     event_id: str | None = None,
+    strength: str | None = None,
 ) -> dict[str, object]:
     alert: dict[str, object] = {
         "event": event,
@@ -56,6 +60,8 @@ def _alert(
     }
     if event_id is not None:
         alert["event_id"] = event_id
+    if strength is not None:
+        alert["strength"] = strength
     return alert
 
 
@@ -71,8 +77,7 @@ class AlertDispatcherTest(unittest.TestCase):
         )
 
         self.assertTrue(outcome.delivered)
-        self.assertIn(("play_haptic", "urgent_repeat", 100, 0), self.transport.calls)
-        self.assertIn(("set_status_led", "emergency"), self.transport.calls)
+        self.assertIn(("play_haptic", "urgent_repeat", 255, 0), self.transport.calls)
 
     def test_informational_alert_uses_two_short_at_reduced_intensity(self) -> None:
         outcome = self.dispatcher.dispatch(
@@ -80,13 +85,18 @@ class AlertDispatcherTest(unittest.TestCase):
         )
 
         self.assertTrue(outcome.delivered)
-        self.assertIn(("play_haptic", "two_short", 60, 1), self.transport.calls)
+        self.assertIn(("play_haptic", "two_short", 100, 1), self.transport.calls)
 
     def test_unknown_category_falls_back_to_informational_plan(self) -> None:
         outcome = self.dispatcher.dispatch(_alert(category="mystery", pattern="long_pulse"))
 
         self.assertTrue(outcome.delivered)
-        self.assertIn(("play_haptic", "long_pulse", 60, 1), self.transport.calls)
+        self.assertIn(("play_haptic", "long_pulse", 100, 1), self.transport.calls)
+
+    def test_profile_strength_maps_to_firmware_pwm_range(self) -> None:
+        self.dispatcher.dispatch(_alert(strength="strong"))
+
+        self.assertIn(("play_haptic", "long_pulse", 255, 1), self.transport.calls)
 
     def test_repeated_event_within_cooldown_is_suppressed(self) -> None:
         first = self.dispatcher.dispatch(_alert())
@@ -148,7 +158,7 @@ class AlertDispatcherTest(unittest.TestCase):
         self.transport.button_pressed = True
         self.assertTrue(self.dispatcher.poll_acknowledge())
         self.assertIn(("stop_haptic",), self.transport.calls)
-        self.assertIn(("set_status_led", "idle"), self.transport.calls)
+        self.assertIn(("set_status_led", False), self.transport.calls)
         self.assertFalse(self.dispatcher.poll_acknowledge())
 
     def test_transport_failure_is_reported_not_raised(self) -> None:
@@ -162,6 +172,24 @@ class AlertDispatcherTest(unittest.TestCase):
         self.assertFalse(outcome.delivered)
         self.assertEqual(outcome.reason, "transport_error")
         self.assertIn("bridge offline", str(dispatcher.health_snapshot()["last_transport_error"]))
+
+    def test_failed_event_id_can_be_retried_after_bridge_recovery(self) -> None:
+        class RecoveringTransport(FakeHapticTransport):
+            def __init__(self) -> None:
+                super().__init__()
+                self.fail = True
+
+            def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> bool:
+                if self.fail:
+                    self.fail = False
+                    raise ConnectionError("bridge starting")
+                return super().play_haptic(pattern, intensity, repeat_count)
+
+        dispatcher = AlertDispatcher(RecoveringTransport(), clock=self.clock)
+        alert = _alert(event_id="evt_retry")
+
+        self.assertFalse(dispatcher.dispatch(alert).delivered)
+        self.assertTrue(dispatcher.dispatch(alert).delivered)
 
     def test_health_snapshot_counts_deliveries_and_suppressions(self) -> None:
         self.dispatcher.dispatch(_alert())

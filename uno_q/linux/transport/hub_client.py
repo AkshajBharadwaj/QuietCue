@@ -12,14 +12,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from backend.audio.wav_source import SAMPLE_RATE, AudioChunk, iter_wav_chunks
-from backend.communication.stream_protocol import WireMessage, read_message, write_message
+from backend.communication.stream_protocol import ProtocolError, WireMessage, read_message, write_message
 from uno_q.linux.audio_capture.alsa_source import (
     DEFAULT_ALSA_DEVICE,
+    AlsaCaptureError,
     AlsaPcmSource,
     list_capture_hardware,
 )
 from uno_q.linux.audio_capture.edge_analyzer import EdgeAudioAnalyzer
-from uno_q.linux.rpc_client import AlertDispatcher, ConsoleHapticTransport
+from uno_q.linux.rpc_client import AlertDispatcher, AppLabBridgeHapticTransport
 from uno_q.linux.transport.hub_selector import (
     HubCandidate,
     HubKind,
@@ -34,6 +35,10 @@ class Endpoint:
     kind: HubKind
     host: str
     port: int
+
+
+class NoHubAvailable(ConnectionError):
+    """Raised when configured hubs are temporarily unreachable."""
 
 
 async def probe(endpoint: Endpoint, device_id: str, pairing_token: str) -> HubCandidate | None:
@@ -92,9 +97,11 @@ async def stream_chunks(
     analyzer = EdgeAudioAnalyzer(SAMPLE_RATE)
 
     if lease is None:
-        print("No eligible hub is connected; showing Uno Q edge candidates only.")
-        _print_edge_only(chunks, analyzer, compact)
-        return
+        if not endpoints:
+            print("No hub configured; showing Uno Q edge candidates only.")
+            _print_edge_only(chunks, analyzer, compact)
+            return
+        raise NoHubAvailable("No configured inference hub is reachable")
 
     selected = lease.candidate
     print(
@@ -130,12 +137,26 @@ async def stream_chunks(
             )
             response = await read_message(reader)
             if alert_dispatcher is not None and response.kind == "detection_result":
-                for outcome in alert_dispatcher.handle_detection_result(response.body):
+                outcomes = alert_dispatcher.handle_detection_result(response.body)
+                for outcome in outcomes:
                     print(
                         f"haptic {outcome.pattern} for {outcome.event}: "
                         f"{'delivered' if outcome.delivered else outcome.reason}"
                     )
-                alert_dispatcher.poll_acknowledge()
+                acknowledged = alert_dispatcher.poll_acknowledge()
+                if outcomes or acknowledged or chunk.sequence % 10 == 0:
+                    await write_message(
+                        writer,
+                        WireMessage(
+                            "haptic_result",
+                            {
+                                "sequence": chunk.sequence,
+                                "outcomes": [outcome.to_wire() for outcome in outcomes],
+                                "acknowledged": acknowledged,
+                                "health": alert_dispatcher.health_snapshot(),
+                            },
+                        ),
+                    )
             _print_result(chunk, edge.to_wire(), response.body, compact)
     finally:
         writer.close()
@@ -194,6 +215,56 @@ async def stream_microphone(
             compact=compact,
             alert_dispatcher=alert_dispatcher,
         )
+
+
+async def run_microphone_client(
+    alsa_device: str,
+    endpoints: list[Endpoint],
+    preference: RoutingPreference,
+    device_id: str,
+    pairing_token: str,
+    phrase_triggers: list[str],
+    chunk_ms: int,
+    max_chunks: int | None,
+    compact: bool,
+    alert_dispatcher: AlertDispatcher | None,
+    *,
+    reconnect: bool,
+) -> None:
+    """Keep a live microphone session connected with bounded backoff."""
+    backoff_seconds = 1.0
+    while True:
+        try:
+            await stream_microphone(
+                alsa_device,
+                endpoints,
+                preference,
+                device_id,
+                pairing_token,
+                phrase_triggers,
+                chunk_ms,
+                max_chunks,
+                compact,
+                alert_dispatcher=alert_dispatcher,
+            )
+            return
+        except (
+            AlsaCaptureError,
+            NoHubAvailable,
+            OSError,
+            ProtocolError,
+            asyncio.IncompleteReadError,
+            asyncio.TimeoutError,
+        ) as exc:
+            if not reconnect or max_chunks is not None:
+                raise
+            print(
+                f"Live session unavailable ({type(exc).__name__}: {exc}); "
+                f"retrying in {backoff_seconds:.0f}s",
+                flush=True,
+            )
+            await asyncio.sleep(backoff_seconds)
+            backoff_seconds = min(backoff_seconds * 2, 30.0)
 
 
 def _print_edge_only(
@@ -291,7 +362,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--haptics",
         action="store_true",
-        help="Dispatch hub alerts to the haptic RPC bridge (console transport off-device)",
+        help="Dispatch hub alerts through the Uno Q App Lab Bridge to the STM32",
+    )
+    parser.add_argument(
+        "--haptics-container",
+        help="Override the App Lab container name (normally auto-detected)",
+    )
+    parser.add_argument(
+        "--no-reconnect",
+        action="store_true",
+        help="Exit instead of reconnecting after a live microphone or hub failure",
     )
     return parser.parse_args()
 
@@ -314,10 +394,16 @@ def main() -> None:
         endpoints.append(_endpoint(args.pc, HubKind.COPILOT_PC, "configured-pc"))
     if args.phone:
         endpoints.append(_endpoint(args.phone, HubKind.SAMSUNG_PHONE, "configured-phone"))
-    dispatcher = AlertDispatcher(ConsoleHapticTransport()) if args.haptics else None
+    dispatcher = None
+    if args.haptics:
+        haptic_transport = AppLabBridgeHapticTransport(args.haptics_container)
+        if not haptic_transport.health_check():
+            raise SystemExit("STM32 haptic firmware health check failed")
+        print(f"Haptic Bridge ready: {haptic_transport.firmware_version()}")
+        dispatcher = AlertDispatcher(haptic_transport)
     if args.microphone:
         asyncio.run(
-            stream_microphone(
+            run_microphone_client(
                 args.input_device,
                 endpoints,
                 RoutingPreference(args.preference),
@@ -327,7 +413,8 @@ def main() -> None:
                 args.chunk_ms,
                 args.max_chunks,
                 args.compact,
-                alert_dispatcher=dispatcher,
+                dispatcher,
+                reconnect=not args.no_reconnect,
             )
         )
     else:

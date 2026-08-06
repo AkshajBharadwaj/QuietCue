@@ -73,6 +73,7 @@ class AlertCommand:
     issued_at_ms: int
     total_after_capture_ms: int
     simulated: bool = True
+    fallback_to_phone: bool = False
 
     def to_wire(self) -> dict[str, object]:
         return asdict(self)
@@ -125,7 +126,15 @@ class ProfileDecisionEngine:
 
         for event in events:
             rule = self.profile.rule_for(event.event)
-            reason = self._suppression_reason(event, rule, issued_at_ms, quiet_now)
+            fallback_to_phone = rule is None
+            if rule is None:
+                rule = _phone_fallback_rule(event.event)
+            reason = self._suppression_reason(
+                event,
+                rule,
+                issued_at_ms,
+                quiet_now and not fallback_to_phone,
+            )
             if reason is not None:
                 suppressed.append(SuppressedEvent(event.event, event.confidence, reason))
                 continue
@@ -147,6 +156,7 @@ class ProfileDecisionEngine:
                     captured_at_ms=captured_at_ms,
                     issued_at_ms=issued_at_ms,
                     total_after_capture_ms=max(0, issued_at_ms - captured_at_ms),
+                    fallback_to_phone=fallback_to_phone,
                 )
             )
         return DecisionResult(tuple(alerts), tuple(suppressed))
@@ -178,3 +188,17 @@ def _is_quiet_time(quiet_hours: QuietHours, minute_of_day: int) -> bool:
     if quiet_hours.start_minutes < quiet_hours.end_minutes:
         return quiet_hours.start_minutes <= minute_of_day < quiet_hours.end_minutes
     return minute_of_day >= quiet_hours.start_minutes or minute_of_day < quiet_hours.end_minutes
+
+
+def _phone_fallback_rule(event: str) -> SoundRule:
+    """Use one gentle, profile-independent cue for recognized unconfigured sounds."""
+    return SoundRule(
+        event=event,
+        enabled=True,
+        confidence_threshold=0.0,
+        category="informational",
+        pattern="two_short",
+        strength="gentle",
+        requires_ack=False,
+        cooldown_seconds=30,
+    )

@@ -72,5 +72,6 @@ class AlertRepository(
         totalLatencyMs = json.optInt("total_after_capture_ms", 0),
         requiresAcknowledgement = json.optBoolean("requires_ack", false),
         simulated = json.optBoolean("simulated", true),
+        fallbackToPhone = json.optBoolean("fallback_to_phone", false),
     )
 }

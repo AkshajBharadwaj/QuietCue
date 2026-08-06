@@ -91,6 +91,19 @@ class QuietCueHubServer:
                 if message.kind == "heartbeat":
                     await write_message(writer, WireMessage("heartbeat_ack", message.body))
                     continue
+                if message.kind == "haptic_result":
+                    self._state_store.record_haptic_result(device_id, message.body)
+                    for outcome in message.body.get("outcomes", []):
+                        if not isinstance(outcome, dict):
+                            continue
+                        LOGGER.info(
+                            "HAPTIC %s: %s (%s) on %s",
+                            "delivered" if outcome.get("delivered") else "not delivered",
+                            outcome.get("event", "unknown"),
+                            outcome.get("reason", "unknown"),
+                            device_id,
+                        )
+                    continue
                 if message.kind != "audio_chunk":
                     raise ProtocolError(f"Unsupported message kind: {message.kind}")
                 result, decisions = await self._process_audio(message)
@@ -107,7 +120,7 @@ class QuietCueHubServer:
                 )
                 for alert in decisions.alerts:
                     LOGGER.warning(
-                        "SIMULATED HAPTIC %s: %s (%s, %.1f%%) via profile %s",
+                        "ALERT COMMAND %s: %s (%s, %.1f%%) via profile %s",
                         alert.pattern,
                         alert.event,
                         alert.category,

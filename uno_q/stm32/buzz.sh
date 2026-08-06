@@ -16,6 +16,7 @@ Usage: ./buzz.sh [command]
 
 Commands:
   status       Firmware, Bridge health, and motor-pin status (default)
+  short_pulse  One bounded quick pulse
   two_short    Two bounded short pulses
   long_pulse   One bounded long pulse
   urgent       Repeat the urgent pattern until button, stop, or 30 s timeout
@@ -79,6 +80,9 @@ case "$COMMAND" in
     ;;
   pin)
     bridge_expression='print("motor_pin_high:", Bridge.call("get_motor_pin", timeout=8))'
+    ;;
+  short_pulse)
+    bridge_expression='print(Bridge.call("play_haptic", "short_pulse", 120, 1, timeout=8))'
     ;;
   two_short)
     bridge_expression='print(Bridge.call("play_haptic", "two_short", 255, 1, timeout=8))'

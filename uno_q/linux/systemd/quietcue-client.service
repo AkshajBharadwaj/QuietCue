@@ -1,0 +1,15 @@
+[Unit]
+Description=QuietCue Uno Q microphone and haptic client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/QuietCue
+ExecStart=%h/projects/QuietCue/scripts/run_uno_q_client.sh
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
