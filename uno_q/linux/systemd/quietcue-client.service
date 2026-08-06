@@ -7,7 +7,8 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=%h/projects/QuietCue
 ExecStart=%h/projects/QuietCue/scripts/run_uno_q_client.sh
-Restart=always
+Restart=on-failure
+RestartPreventExitStatus=78
 RestartSec=3
 TimeoutStopSec=10
 
