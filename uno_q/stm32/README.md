@@ -91,7 +91,24 @@ instead of a MOSFET, drive the base through about 1 kOhm.
 
 ## Smoke test from the Linux side
 
-With the sketch flashed and the App Lab runtime active, on the board:
+With the sketch flashed and the App Lab runtime active, the executable
+`buzz.sh` helper is the simplest test path. It finds the running App Lab
+container and makes the Bridge call inside it. On the board:
+
+```bash
+cd ~/projects/QuietCue/uno_q/stm32
+./buzz.sh                 # status only; does not activate the motor
+./buzz.sh two_short       # bounded two-pulse test
+./buzz.sh long_pulse
+./buzz.sh urgent          # press the button, run stop, or wait for 30 s timeout
+./buzz.sh stop
+```
+
+Run `./buzz.sh help` for the full command list. The raw `on` bench diagnostic
+has no automatic timeout and should not be used for normal pattern testing.
+
+The Python CLI exposes the same RPCs when run from an environment where the
+App Lab Bridge module is directly importable:
 
 ```bash
 python3 uno_q/stm32/test_haptics.py status
