@@ -1,0 +1,7 @@
+# onnxruntime-qnn bundles the QNN Execution Provider (NPU support) AND the core
+# ONNX Runtime. Do NOT also add `onnxruntime` here — the two packages overwrite
+# each other's onnxruntime.dll and NPU support silently breaks.
+onnxruntime-qnn==1.24.4
+numpy>=1.24
+pillow>=10.0
+opencv-python>=4.8

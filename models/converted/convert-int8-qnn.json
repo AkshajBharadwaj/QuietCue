@@ -1,0 +1,95 @@
+{
+  "output_path": "/home/quad/work/QUAD/QUAD/output/_uploads/trYyjQTDoVVss0T6yjquu19X/yamnet_fp32_selfcontained_quantized.dlc",
+  "artifacts": {},
+  "output_format": "qnn_context_binary",
+  "model_size_mb": 3.63,
+  "original_size_mb": 14.25,
+  "compression_ratio": 3.92,
+  "supported_ops_pct": 100.0,
+  "unsupported_ops": [],
+  "quantization_applied": "int8",
+  "conversion_time_s": 3.3,
+  "target_sdk": "qairt",
+  "warnings": [
+    "2026-08-06 06:02:59,232 - 283 - WARNING - Unable to register converter supported Operation [Inverse:Version 1] with your Onnx installation. Converter will bail if Model contains this Op.",
+    "2026-08-06 06:02:59,465 - 283 - WARNING - --desired_input_shape and -d are deprecated. Use --source_model_input_shape or -s for achieving this functionality",
+    "2026-08-06 06:03:00,027 - 283 - WARNING - Symbolic shape inference Failed. Exception: Onnxruntime package not found in current environment. Symbolic Shape Inference will be skipped.. Running normal shape inference.",
+    "2026-08-06 06:03:00,741 - 283 - WARNING - Onnx model simplification failed due to: No module named 'onnxsim'",
+    "2026-08-06 06:03:00,741 - 283 - WARNING - Simplified model validation failed"
+  ],
+  "conversion_notes": [],
+  "image_format_notes": [
+    "SNPE requires NHWC inputs (channel-last). If using PyTorch model, transpose NCHW\u2192NHWC before inference. Verify channel order matches training (RGB vs BGR)."
+  ],
+  "runtime": null,
+  "delegated_op_count": null,
+  "fallback_op_count": null,
+  "delegated_ops": [],
+  "fallback_ops": [],
+  "via": "local",
+  "source_origin": "upload:trYyjQTDoVVss0T6yjquu19X",
+  "artifact_id": "yamnet-fp32-selfcontained",
+  "download_url": "/bundles/yamnet-fp32-selfcontained/download?d=generic&h=e716cdc2c2ca5c0068c53dcf2e3ff9f4f916751e8a30e069659b8e802042c34c",
+  "sha256": "e716cdc2c2ca5c0068c53dcf2e3ff9f4f916751e8a30e069659b8e802042c34c",
+  "size_bytes": 3806964,
+  "artifact_filename": "yamnet_fp32_selfcontained_quantized.dlc",
+  "aihub_device": null,
+  "decisions": [
+    {
+      "category": "model_source",
+      "choice": "upload: upload:trYyjQTDoVVss0T6yjquu19X",
+      "reason": "Caller supplied model_source with kind='upload'.",
+      "severity": "info",
+      "detail": {
+        "run_id": "67eb1a22",
+        "kind": "upload",
+        "origin": "upload:trYyjQTDoVVss0T6yjquu19X",
+        "local_path": "/home/quad/work/QUAD/QUAD/output/_uploads/trYyjQTDoVVss0T6yjquu19X/yamnet_fp32_selfcontained.onnx"
+      }
+    },
+    {
+      "category": "quantization_format",
+      "choice": "QDQ (accepted)",
+      "reason": "ONNX graph uses QuantizeLinear/DequantizeLinear pairs \u2014 HTP-compatible.",
+      "severity": "info",
+      "detail": {
+        "run_id": "67eb1a22",
+        "quantization": "int8",
+        "runtime": "qnn-htp"
+      }
+    },
+    {
+      "category": "cloud_vs_local",
+      "choice": "local SDK",
+      "reason": "Local QAIRT/AIMET path is sufficient for this model + quantization.",
+      "recommendation": "Pass aihub='force' to always use the AI Hub Models cloud.",
+      "severity": "info",
+      "detail": {
+        "run_id": "67eb1a22",
+        "aihub_mode": "auto",
+        "target_sdk": "qnn"
+      }
+    },
+    {
+      "category": "adapter_mode",
+      "choice": "real",
+      "reason": "Adapter factory returned a real adapter for target_sdk='qnn'.",
+      "severity": "info",
+      "detail": {
+        "run_id": "67eb1a22"
+      }
+    }
+  ],
+  "run_id": "67eb1a22",
+  "adapter_mode_used": "real",
+  "fallback_reason": null,
+  "applied_input_specs": {},
+  "ui": "### Model converted: `/home/quad/work/QUAD/QUAD/output/_uploads/trYyjQTDoVVss0T6yjquu19X/yamnet_fp32_selfcontained_quantized.dlc`\n\n|  |  |\n| :--- | :--- |\n| Original size | 14.2 MB |\n| Output size | 3.6 MB |\n| Compression | 3.92\u00d7 smaller |\n| Quantization | int8 |\n| Supported ops | 100% |\n| Conversion time | 3.30 s |\n| Target SDK | qairt |\n\n**Image format guidance:**\n- SNPE requires NHWC inputs (channel-last). If using PyTorch model, transpose NCHW\u2192NHWC before inference. Verify channel order matches training (RGB vs BGR).\n\n**Warnings (5):**\n- 2026-08-06 06:02:59,232 - 283 - WARNING - Unable to register converter supported Operation [Inverse:Version 1] with your Onnx installation. Converter will bail if Model contains this Op.\n- 2026-08-06 06:02:59,465 - 283 - WARNING - --desired_input_shape and -d are deprecated. Use --source_model_input_shape or -s for achieving this functionality\n- 2026-08-06 06:03:00,027 - 283 - WARNING - Symbolic shape inference Failed. Exception: Onnxruntime package not found in current environment. Symbolic Shape Inference will be skipped.. Running normal shape inference.\n\n**Decisions & Recommendations**\n- - `model_source`: **upload: upload:trYyjQTDoVVss0T6yjquu19X** \u2014 Caller supplied model_source with kind='upload'.\n- - `quantization_format`: **QDQ (accepted)** \u2014 ONNX graph uses QuantizeLinear/DequantizeLinear pairs \u2014 HTP-compatible.\n- - `cloud_vs_local`: **local SDK** \u2014 Local QAIRT/AIMET path is sufficient for this model + quantization.\n    - _Tip:_ Pass aihub='force' to always use the AI Hub Models cloud.\n- - `adapter_mode`: **real** \u2014 Adapter factory returned a real adapter for target_sdk='qnn'.",
+  "tips": [
+    "Pass aihub='force' to always use the AI Hub Models cloud.",
+    "ONNX models with symbolic batch dimensions need `input_dimensions=...` to bind a concrete shape.",
+    "INT4 requires per-channel symmetric scheme via AIMET. Per-tensor INT4 is unusable for almost any model.",
+    "HTP NPU input layout is NHWC. PyTorch defaults are NCHW \u2014 use `input_layout='nchw'` so QUAD inserts the transpose."
+  ],
+  "local_path": "C:\\Users\\QCWorkshop6\\Documents\\projects\\QuietCue\\quietcue\\.claude\\worktrees\\quad-audio-model\\models\\converted\\yamnet_fp32_selfcontained_quantized.dlc"
+}
