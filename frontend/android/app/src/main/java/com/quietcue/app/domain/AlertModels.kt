@@ -12,6 +12,8 @@ data class DetectedAlert(
     val requiresAcknowledgement: Boolean,
     val simulated: Boolean,
     val fallbackToPhone: Boolean,
+    val hapticActive: Boolean = false,
+    val acknowledgedAtMs: Long? = null,
 ) {
     val displayName: String
         get() = if (event.startsWith("custom:") && sourceLabel.startsWith("enrolled: ")) {
@@ -40,4 +42,5 @@ data class RuntimeState(
     val discoveries: List<SoundDiscoveryCandidate> = emptyList(),
     val pendingDiscoveryCount: Int = 0,
     val errorMessage: String? = null,
+    val stopInProgress: Boolean = false,
 )

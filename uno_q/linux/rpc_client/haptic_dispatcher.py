@@ -117,11 +117,36 @@ class AlertDispatcher:
         self._last_delivered_event: str | None = None
 
     def handle_detection_result(self, body: dict[str, object]) -> list[DispatchOutcome]:
-        """Dispatch every alert in one hub ``detection_result`` body."""
+        """Dispatch alerts, then apply controls so a remote stop wins any race."""
         alerts = body.get("alerts", [])
-        if not isinstance(alerts, list):
-            return []
-        return [self.dispatch(alert) for alert in alerts if isinstance(alert, dict)]
+        outcomes = (
+            [self.dispatch(alert) for alert in alerts if isinstance(alert, dict)]
+            if isinstance(alerts, list)
+            else []
+        )
+        commands = body.get("control_commands", [])
+        if isinstance(commands, list):
+            for command in commands:
+                if isinstance(command, dict) and command.get("command") == "stop_haptic":
+                    self.stop_haptic()
+        return outcomes
+
+    def stop_haptic(self) -> bool:
+        """Stop the motor through RPC for either app or hardware-button acknowledgement."""
+        try:
+            stopped = self._transport.stop_haptic()
+            if stopped is False:
+                raise RuntimeError("firmware refused stop_haptic")
+            try:
+                self._transport.set_status_led(False)
+            except Exception:
+                pass
+        except Exception as exc:  # noqa: BLE001 - hardware faults must not kill the stream loop.
+            self._last_transport_error = f"{type(exc).__name__}: {exc}"
+            return False
+        self._last_transport_error = None
+        self._pending_ack_event = None
+        return True
 
     def dispatch(self, alert: dict[str, object]) -> DispatchOutcome:
         """Deliver one alert unless dedup or cooldown rules suppress it."""
@@ -169,18 +194,10 @@ class AlertDispatcher:
             pressed = bool(self._transport.get_button_state())
             if not pressed:
                 return False
-            stopped = self._transport.stop_haptic()
-            if stopped is False:
-                raise RuntimeError("firmware refused stop_haptic")
-            try:
-                self._transport.set_status_led(False)
-            except Exception:
-                pass
+            return self.stop_haptic()
         except Exception as exc:  # noqa: BLE001 - hardware faults must not kill the stream loop.
             self._last_transport_error = f"{type(exc).__name__}: {exc}"
             return False
-        self._pending_ack_event = None
-        return True
 
     def health_snapshot(self) -> dict[str, object]:
         """Summarize dispatcher and transport health for hub-side reporting."""

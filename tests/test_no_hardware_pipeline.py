@@ -293,3 +293,53 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
         finally:
             server.close()
             await server.wait_closed()
+
+    async def test_stop_haptic_is_delivered_to_connected_uno_q(self) -> None:
+        profile = get_profile("home")
+        store = AlertStateStore(profile)
+        hub = QuietCueHubServer(
+            lambda: HubInferencePipeline(DemoToneSoundClassifier()),
+            ProfileDecisionEngine(profile),
+            store,
+        )
+        server = await asyncio.start_server(hub.handle_client, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            await write_message(
+                writer,
+                WireMessage("edge_hello", {"device_id": "stop-test", "protocol": 1}),
+            )
+            await read_message(reader)
+            now_ms = int(time.time() * 1_000)
+
+            async def send_chunk(sequence: int) -> WireMessage:
+                await write_message(
+                    writer,
+                    WireMessage(
+                        "audio_chunk",
+                        {
+                            "sequence": sequence,
+                            "captured_at_ms": now_ms,
+                            "sample_rate": 16_000,
+                            "channels": 1,
+                            "encoding": "pcm_s16le",
+                        },
+                        generate_tone_pcm("fire_alarm", 0.5),
+                    ),
+                )
+                return await read_message(reader)
+
+            first = await send_chunk(0)
+            event_id = first.body["alerts"][0]["event_id"]
+            queued = hub.stop_haptic(event_id)
+            second = await send_chunk(1)
+            writer.close()
+            await writer.wait_closed()
+
+            self.assertEqual(queued["status"], "stop_queued")
+            self.assertEqual(second.body["control_commands"][0]["command"], "stop_haptic")
+            self.assertFalse(store.snapshot()["latest_alert"]["haptic_active"])
+        finally:
+            server.close()
+            await server.wait_closed()
