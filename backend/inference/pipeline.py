@@ -11,7 +11,6 @@ from backend.inference.models import SoundPrediction
 from backend.inference.speech import (
     BufferedSpeechRecognizer,
     SpeechTranscriber,
-    find_phrase_match,
 )
 
 
@@ -53,7 +52,9 @@ class HubInferenceResult:
             "events": [asdict(event) for event in self.events],
             "voice_detected": self.voice_detected,
             "speech_confidence": self.speech_confidence,
-            "transcript": self.transcript,
+            # Transcripts are intentionally process-local. Only a configured
+            # matched phrase may leave inference through an event source label.
+            "transcript": None,
             "speech_pending": self.speech_pending,
             "speech_inference_ms": self.speech_inference_ms,
             "speech_error": self.speech_error,
@@ -91,6 +92,8 @@ class HubInferencePipeline:
         phrase_triggers: list[str] | None = None,
         speech_prompt: str = "",
         speech_hotwords: list[str] | None = None,
+        speech_enabled: bool = True,
+        speech_sensitivity: float = 0.6,
     ) -> HubInferenceResult:
         if sample_rate != 16_000:
             raise ValueError("Hub baseline currently requires 16 kHz audio")
@@ -115,7 +118,7 @@ class HubInferencePipeline:
         speech_inference_ms = None
         speech_error = None
         events = [_confirmed_event(event) for event in mapping.events]
-        if self.speech_recognizer is not None:
+        if self.speech_recognizer is not None and speech_enabled:
             recognition, speech_pending = self.speech_recognizer.update(
                 pcm,
                 sample_rate,
@@ -123,17 +126,14 @@ class HubInferencePipeline:
                 phrase_triggers or [],
                 speech_prompt,
                 speech_hotwords or [],
+                speech_sensitivity,
             )
             if recognition is not None:
                 speech_inference_ms = recognition.inference_ms
                 speech_error = recognition.error
                 if recognition.transcript is not None:
                     transcript = recognition.transcript.text
-                phrase_match = (
-                    find_phrase_match(recognition.transcript, phrase_triggers or [])
-                    if recognition.transcript is not None
-                    else None
-                )
+                phrase_match = recognition.phrase_match
                 if phrase_match is not None:
                     events.append(
                         ConfirmedEvent(
@@ -145,6 +145,8 @@ class HubInferencePipeline:
                             requires_ack=False,
                         )
                     )
+        elif self.speech_recognizer is not None:
+            self.speech_recognizer.reset()
 
         total_ms = (time.perf_counter() - started) * 1_000
         top_predictions = tuple(

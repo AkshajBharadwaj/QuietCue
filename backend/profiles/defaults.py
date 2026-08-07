@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from backend.profiles.engine import AlertProfile, QuietHours, SoundRule
+from backend.profiles.speech_context import SpeechMode
 
 
 EVENTS = (
@@ -52,6 +53,8 @@ def _work() -> AlertProfile:
         "Work / School",
         disabled={"baby_crying", "kitchen_timer"},
         thresholds={"name_called": 0.48, "phone_ringing": 0.65},
+        phrase_triggers=("front desk",),
+        speech_mode=SpeechMode.ALWAYS_ON,
         overrides={"phone_ringing": {"category": "informational", "pattern": "short_pulse"}},
     )
 
@@ -81,6 +84,7 @@ def _sleep() -> AlertProfile:
         disabled={"doorbell_knock", "car_horn", "kitchen_timer", "phone_ringing"},
         thresholds={"baby_crying": 0.42},
         quiet_hours=QuietHours(True, 22 * 60, 7 * 60),
+        speech_mode=SpeechMode.OFF,
         overrides={
             "baby_crying": {
                 "category": "emergency",
@@ -119,6 +123,7 @@ def _profile(
     phrase_triggers: tuple[str, ...] = (),
     quiet_hours: QuietHours = QuietHours(),
     overrides: dict[str, dict[str, object]] | None = None,
+    speech_mode: SpeechMode = SpeechMode.INHERIT,
 ) -> AlertProfile:
     thresholds = thresholds or {}
     overrides = overrides or {}
@@ -132,7 +137,14 @@ def _profile(
         if event in overrides:
             rule = replace(rule, **overrides[event])
         rules.append(rule)
-    return AlertProfile(profile_id, name, phrase_triggers, quiet_hours, tuple(rules))
+    return AlertProfile(
+        profile_id,
+        name,
+        phrase_triggers,
+        quiet_hours,
+        tuple(rules),
+        speech_mode=speech_mode,
+    )
 
 
 def _base_rule(event: str) -> SoundRule:

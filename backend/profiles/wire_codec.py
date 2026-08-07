@@ -12,7 +12,15 @@ from backend.profiles.engine import (
     QuietHours,
     SoundRule,
 )
-from backend.profiles.speech_context import KnownPerson, ManualContext, SpeechContext, UserIdentity
+from backend.profiles.speech_context import (
+    KnownPerson,
+    ManualContext,
+    SpeechContext,
+    SpeechMode,
+    SpeechModel,
+    SpeechSettings,
+    UserIdentity,
+)
 
 
 _CATEGORIES = {"informational", "attention", "emergency"}
@@ -25,6 +33,11 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
     name = _required_text(document, "name", 40)
     phrase_triggers = _text_list(document.get("phrase_triggers", []), 40, 20)
     speech_context = _decode_speech_context(document.get("speech_context", {}))
+    speech_mode = _enum_choice(
+        document.get("speech_mode", SpeechMode.INHERIT.value),
+        SpeechMode,
+        "speech_mode",
+    )
     quiet_document = document.get("quiet_hours", {})
     if not isinstance(quiet_document, dict):
         raise ValueError("quiet_hours must be an object")
@@ -131,6 +144,7 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
         custom_sounds=tuple(custom_sounds),
         classifier_label_rules=tuple(classifier_label_rules),
         speech_context=speech_context,
+        speech_mode=speech_mode,
     )
 
 
@@ -139,6 +153,27 @@ def _decode_speech_context(value: Any) -> SpeechContext:
         return SpeechContext()
     if not isinstance(value, dict):
         raise ValueError("speech_context must be an object")
+
+    settings_document = value.get("settings", {})
+    if not isinstance(settings_document, dict):
+        raise ValueError("speech_context.settings must be an object")
+    settings = SpeechSettings(
+        enabled=_optional_bool(settings_document, "enabled", True),
+        model=_enum_choice(
+            settings_document.get("model", SpeechModel.TINY_EN.value),
+            SpeechModel,
+            "speech_context.settings.model",
+        ),
+        sensitivity=_bounded_float(settings_document.get("sensitivity", 0.6), 0.4, 0.95),
+        listen_for_identity=_optional_bool(settings_document, "listen_for_identity", True),
+        listen_for_people=_optional_bool(settings_document, "listen_for_people", False),
+        global_phrases=_bounded_text_list(
+            settings_document.get("global_phrases", []),
+            20,
+            40,
+            "global phrases",
+        ),
+    )
 
     identity_document = value.get("identity")
     identity = None
@@ -187,7 +222,29 @@ def _decode_speech_context(value: Any) -> SpeechContext:
                 details=_required_text(item, "details", 500),
             )
         )
-    return SpeechContext(identity=identity, people=tuple(people), contexts=tuple(contexts))
+    return SpeechContext(
+        identity=identity,
+        people=tuple(people),
+        contexts=tuple(contexts),
+        settings=settings,
+    )
+
+
+def _optional_bool(document: dict[str, Any], key: str, default: bool) -> bool:
+    value = document.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be a boolean")
+    return value
+
+
+def _enum_choice(value: Any, enum_type: type, label: str):
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    try:
+        return enum_type(value)
+    except ValueError as exc:
+        choices = ", ".join(item.value for item in enum_type)
+        raise ValueError(f"{label} must be one of: {choices}") from exc
 
 
 def _decode_custom_pattern(value: Any) -> str:

@@ -13,7 +13,8 @@ param(
     [ValidateSet("home", "work", "driving", "sleep", "emergency")]
     [string]$AlertProfile = "home",
 
-    [string]$SpeechModel = "",
+    [string]$SpeechModel = "base.en",
+    [switch]$NoSpeech,
 
     [string]$BindHost = "127.0.0.1",
 
@@ -42,7 +43,7 @@ if ($Classifier -eq "yamnet") {
     & $venvPython -m pip install --quiet -r backend\requirements.txt
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
 }
-if ($SpeechModel -ne "") {
+if (-not $NoSpeech -and $SpeechModel -ne "") {
     Write-Host "Installing speech dependencies (backend\requirements-speech.txt) ..."
     & $venvPython -m pip install --quiet --upgrade pip
     & $venvPython -m pip install --quiet -r backend\requirements-speech.txt
@@ -70,8 +71,10 @@ $hubArgs = @(
     "--classifier", $Classifier,
     "--profile", $AlertProfile
 )
-if ($SpeechModel -ne "") {
+if (-not $NoSpeech -and $SpeechModel -ne "") {
     $hubArgs += @("--speech-model", $SpeechModel, "--speech-device", "cpu", "--speech-compute-type", "int8")
+} else {
+    $hubArgs += "--no-speech"
 }
 
 Write-Host ""

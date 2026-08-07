@@ -17,6 +17,8 @@ deliver to the STM32 haptic firmware.
   to any sound rule.
 - Quiet hours with an unconditional emergency bypass.
 - Name and phrase triggers.
+- Encrypted global speech settings, per-profile speech overrides, fuzzy name
+  matching, and lazy on-phone Whisper ONNX transcription on a separate worker.
 - Optional activity and location labels for future automatic profile activation.
 - Built-in profile reset and custom profile deletion.
 - Local validation and unit tests for defaults, times, and persistence encoding.
@@ -108,8 +110,12 @@ python3 -u -m uno_q.linux.transport.hub_client \
   --compact
 ```
 
-The phone currently performs quantized environmental-sound inference on CPU.
-Speech transcription and enrolled-sound matching remain computer-hub features.
+The phone performs quantized environmental-sound inference on CPU. It can also
+run the staged Whisper ONNX encoder/decoder locally when speech is enabled and a
+configured phrase is available; the model is loaded lazily and decoding never
+blocks environmental inference. Model weights are not committed. Follow
+[`../../docs/WHISPER_ONNX.md`](../../docs/WHISPER_ONNX.md) to validate and stage
+the Tiny or Base assets. Enrolled-sound matching remains a computer-hub feature.
 The pairing token is optional during development, so port `8765` should only be
 exposed on a trusted LAN or private overlay network.
 

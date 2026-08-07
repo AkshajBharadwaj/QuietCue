@@ -10,7 +10,7 @@ current implementation status, and [`docs/DEMO.md`](docs/DEMO.md) for the
 ## Quick start (Windows hub)
 
 One command creates the virtual environment if needed and starts the hub with
-the dependency-free demo classifier:
+the demo classifier plus the gated local `base.en` speech path:
 
 ```powershell
 .\scripts\run_demo.ps1
@@ -20,7 +20,8 @@ Useful variants:
 
 ```powershell
 .\scripts\run_demo.ps1 -Classifier yamnet          # real YAMNet classifier
-.\scripts\run_demo.ps1 -SpeechModel tiny.en        # add the gated speech path
+.\scripts\run_demo.ps1 -SpeechModel tiny.en        # use the smaller speech model
+.\scripts\run_demo.ps1 -NoSpeech                   # environmental detection only
 .\scripts\run_demo.ps1 -AlertProfile sleep         # start in another profile
 .\scripts\run_demo.ps1 -BindHost 0.0.0.0           # accept the Uno Q over LAN/Tailscale
 ```
@@ -112,9 +113,11 @@ microphone examples plus background calibration. See
 
 The **My context** tab adds a private, manually controlled identity and context
 bank. Users can enroll their name and pronunciation, add people and life context,
-and synchronize those approved hints to local speech inference. QuietCue does not
+configure encrypted speech/name settings, and synchronize those approved hints to
+local speech inference. QuietCue does not
 generate or suggest memories from background conversations. See
-[`docs/IDENTITY_AND_MEMORY.md`](docs/IDENTITY_AND_MEMORY.md).
+[`docs/IDENTITY_AND_MEMORY.md`](docs/IDENTITY_AND_MEMORY.md) and
+[`docs/WHISPER_ONNX.md`](docs/WHISPER_ONNX.md).
 
 The Android companion also supports **Smart profile suggestions** using locally
 stored phone geofences. A saved Home, Work, or School boundary can suggest its

@@ -11,6 +11,8 @@ bank, not a conversation recorder or an automatic memory generator.
   text and never the enrollment recording.
 - Manually entered people with relationship, pronunciation, aliases, and notes.
 - Manually entered context such as places, routines, classes, or projects.
+- Encrypted speech settings: master switch, on-device model, sensitivity,
+  identity/people audiences, and global phrases.
 - Edit, individual delete, and delete-everything controls.
 - AES-GCM encryption using a non-exportable Android Keystore key.
 
@@ -24,13 +26,16 @@ The inference hub keeps that synchronized context in its runtime profile:
 
 - The enrolled user's name, pronunciation, aliases, and approved voice-check
   phrases can trigger `name_called`.
-- Other people's names and aliases are transcription hotwords only. They do not
-  trigger the user's name alert.
-- Manual context is included in a bounded local Faster-Whisper prompt.
+- Other people's names and aliases are transcription hotwords by default. They
+  trigger `name_called` only after the user enables the explicit people audience.
+- Manual context is included in the bounded local Faster-Whisper prompt on the
+  computer. The phone's ONNX path ships without prompt/BPE conditioning and uses
+  fuzzy matching over approved trigger phrases.
 - The environmental classifier is unchanged and does not depend on memory data.
 
-The prompt is capped at 800 characters. The sync decoder also bounds field
-lengths and allows no more than 50 people and 50 context entries.
+The prompt is capped at 800 characters. The sync decoder also bounds settings,
+field lengths, sensitivity, phrase counts, and no more than 50 people and 50
+context entries.
 
 ## Voice-check privacy and availability
 

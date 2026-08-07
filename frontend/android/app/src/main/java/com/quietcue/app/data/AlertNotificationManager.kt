@@ -33,7 +33,12 @@ class AlertNotificationManager(private val context: Context) {
     }
 
     fun notify(alert: DetectedAlert) {
-        if (!hasNotificationPermission()) return
+        if (
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         ensureChannel()
 
         val contentTitle = context.getString(
@@ -69,13 +74,6 @@ class AlertNotificationManager(private val context: Context) {
             .build()
 
         notificationManager.notify(alert.notificationId(), notification)
-    }
-
-    private fun hasNotificationPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS,
-        ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun buildContentText(alert: DetectedAlert): String {

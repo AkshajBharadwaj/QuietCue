@@ -15,6 +15,7 @@ import com.quietcue.app.domain.ProfileIcon
 import com.quietcue.app.domain.QuietHours
 import com.quietcue.app.domain.SoundRule
 import com.quietcue.app.domain.SoundType
+import com.quietcue.app.domain.SpeechMode
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -58,6 +59,7 @@ object ProfileJsonCodec {
                 .put("activity", profile.activation.activity.name)
                 .put("locationLabel", profile.activation.locationLabel),
         )
+        .put("speechMode", profile.speechMode.name)
         .put("phraseTriggers", JSONArray(profile.phraseTriggers))
         .put(
             "soundRules",
@@ -132,6 +134,7 @@ object ProfileJsonCodec {
                 locationLabel = activationJson?.optString("locationLabel", fallback.activation.locationLabel)
                     ?: fallback.activation.locationLabel,
             ),
+            speechMode = json.enumOrNull<SpeechMode>("speechMode") ?: fallback.speechMode,
             phraseTriggers = buildList {
                 if (phraseJson != null) {
                     for (index in 0 until phraseJson.length()) {

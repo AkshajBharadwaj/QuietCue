@@ -20,9 +20,11 @@ android {
     sourceSets["main"].assets.srcDir(
         "../../../models/source/yamnet-onnx-w8a8/yamnet-onnx-w8a8",
     )
+    sourceSets["main"].assets.srcDir("../../../models/source/whisper")
+    sourceSets["test"].resources.srcDir("../../../tests/fixtures")
 
     androidResources {
-        noCompress += setOf("onnx", "data")
+        noCompress += setOf("onnx", "data", "json")
     }
 
     buildTypes {

@@ -12,7 +12,8 @@ bind_host="127.0.0.1"
 bind_host_explicit=false
 audio_port="8765"
 state_port="8787"
-speech_model=""
+speech_model="base.en"
+speech_disabled=0
 showcase=false
 exit_after_showcase=false
 install_android=false
@@ -39,7 +40,8 @@ usage() {
         "  --skip-android             Do not configure or launch a connected Android device" \
         "  --classifier MODE          demo, yamnet, or onnx (default: demo)" \
         "  --profile PROFILE          home, work, driving, sleep, or emergency" \
-        "  --speech-model MODEL       Optional local Faster-Whisper model" \
+        "  --speech-model MODEL       Local Faster-Whisper model (default: base.en)" \
+        "  --no-speech                Disable local speech transcription" \
         "  --bind-host HOST           Hub/state bind address (default: 127.0.0.1)" \
         "  --port PORT                Audio TCP port (default: 8765)" \
         "  --state-port PORT          State HTTP port (default: 8787)" \
@@ -59,6 +61,7 @@ while [[ $# -gt 0 ]]; do
         --classifier) classifier="${2:?Missing classifier}"; classifier_explicit=true; shift 2 ;;
         --profile) alert_profile="${2:?Missing profile}"; shift 2 ;;
         --speech-model) speech_model="${2:?Missing speech model}"; shift 2 ;;
+        --no-speech) speech_disabled=1; speech_model=""; shift ;;
         --bind-host) bind_host="${2:?Missing bind host}"; bind_host_explicit=true; shift 2 ;;
         --port) audio_port="${2:?Missing audio port}"; shift 2 ;;
         --state-port) state_port="${2:?Missing state port}"; shift 2 ;;
@@ -214,7 +217,7 @@ if [[ -n "$requirements" ]]; then
     "$venv_python" -m pip install --quiet --upgrade pip
     "$venv_python" -m pip install --quiet -r "$requirements"
 fi
-if [[ -n "$speech_model" ]]; then
+if [[ "$speech_disabled" -eq 0 && -n "$speech_model" ]]; then
     printf 'Ensuring local speech dependencies are installed...\n'
     "$venv_python" -m pip install --quiet --upgrade pip
     "$venv_python" -m pip install --quiet -r backend/requirements-speech.txt
@@ -257,8 +260,10 @@ hub_args=(
     --profile "$alert_profile"
     --pairing-token "$pairing_token"
 )
-if [[ -n "$speech_model" ]]; then
+if [[ "$speech_disabled" -eq 0 && -n "$speech_model" ]]; then
     hub_args+=(--speech-model "$speech_model" --speech-device cpu --speech-compute-type int8)
+else
+    hub_args+=(--no-speech)
 fi
 
 printf 'Starting QuietCue: classifier=%s profile=%s audio=%s:%s state=%s:%s\n' \

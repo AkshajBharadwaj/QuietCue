@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -181,6 +182,20 @@ fun DashboardScreen(
                         "Run the local QuietCue hub"
                     },
                     runtimeState.backendConnected,
+                )
+                StatusRow(
+                    Icons.Rounded.GraphicEq,
+                    "Speech and name detection",
+                    when {
+                        phoneInferenceState.speechError != null -> phoneInferenceState.speechError
+                        phoneInferenceState.speechPending -> "Transcribing locally…"
+                        phoneInferenceState.speechListening -> "Listening for configured phrases"
+                        phoneInferenceState.speechModelLoaded -> {
+                            "Model ready" + (phoneInferenceState.speechInferenceMs?.let { " • last decode ${it.toInt()} ms" } ?: "")
+                        }
+                        else -> "Loads only when an enabled profile hears speech"
+                    },
+                    phoneInferenceState.speechModelLoaded && phoneInferenceState.speechError == null,
                 )
                 StatusRow(
                     Icons.Rounded.Watch,

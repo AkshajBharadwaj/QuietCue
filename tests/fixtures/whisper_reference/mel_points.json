@@ -1,0 +1,16 @@
+{
+  "generator": "scripts/whisper_onnx_reference.py",
+  "sample_rate": 16000,
+  "duration_samples": 16000,
+  "tone_hz": 440.0,
+  "amplitude_pcm16": 12000,
+  "tolerance": 0.0002,
+  "points": [
+    {"band": 0, "frame": 0, "value": 0.9156391},
+    {"band": 0, "frame": 1, "value": 0.4036398},
+    {"band": 10, "frame": 0, "value": 1.2686105},
+    {"band": 10, "frame": 10, "value": 1.2811075},
+    {"band": 20, "frame": 10, "value": -0.6294265},
+    {"band": 79, "frame": 1000, "value": -0.6294265}
+  ]
+}

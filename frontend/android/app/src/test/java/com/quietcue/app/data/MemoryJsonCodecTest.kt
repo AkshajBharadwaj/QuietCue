@@ -4,6 +4,8 @@ import com.quietcue.app.domain.ContextMemory
 import com.quietcue.app.domain.MemoryBank
 import com.quietcue.app.domain.PersonMemory
 import com.quietcue.app.domain.UserIdentity
+import com.quietcue.app.domain.SpeechModel
+import com.quietcue.app.domain.SpeechSettings
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -23,6 +25,12 @@ class MemoryJsonCodecTest {
             ),
             contexts = listOf(
                 ContextMemory("context-1", "Tuesday class", "Building 4", updatedAtEpochMs = 12),
+            ),
+            speechSettings = SpeechSettings(
+                model = SpeechModel.BASE_EN,
+                sensitivity = 0.75f,
+                listenForPeople = true,
+                globalPhrases = listOf("front desk"),
             ),
         )
 

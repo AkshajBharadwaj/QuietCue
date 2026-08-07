@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,11 +21,14 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -42,9 +46,152 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.quietcue.app.domain.ContextMemory
 import com.quietcue.app.domain.PersonMemory
+import com.quietcue.app.domain.SpeechModel
+import com.quietcue.app.domain.SpeechSettings
 import com.quietcue.app.domain.UserIdentity
 import java.util.UUID
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+
+@Composable
+fun SpeechSettingsScreen(
+    initial: SpeechSettings,
+    identityAvailable: Boolean,
+    onBack: () -> Unit,
+    onSave: (SpeechSettings) -> Unit,
+) {
+    var enabled by rememberSaveable(initial) { mutableStateOf(initial.enabled) }
+    var modelName by rememberSaveable(initial) { mutableStateOf(initial.model.name) }
+    var sensitivity by rememberSaveable(initial) { mutableStateOf(initial.sensitivity) }
+    var listenForIdentity by rememberSaveable(initial) { mutableStateOf(initial.listenForIdentity) }
+    var listenForPeople by rememberSaveable(initial) { mutableStateOf(initial.listenForPeople) }
+    var phrases by rememberSaveable(initial) {
+        mutableStateOf(initial.globalPhrases.joinToString(", "))
+    }
+    val model = runCatching { SpeechModel.valueOf(modelName) }.getOrDefault(SpeechModel.TINY_EN)
+
+    EditorScaffold("Speech and names", onBack) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = editorPadding(padding),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item {
+                Text(
+                    "Speech stays on the active hub. Audio and transcripts are never saved; only a matched configured phrase can become an alert.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            item {
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        SpeechSwitchRow(
+                            title = "Enable speech detection",
+                            detail = "Profiles set to Off still remain silent; Always on profiles override this switch.",
+                            checked = enabled,
+                            onCheckedChange = { enabled = it },
+                        )
+                        Text("On-device model", style = MaterialTheme.typography.labelLarge)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SpeechModel.entries.forEach { option ->
+                                FilterChip(
+                                    selected = model == option,
+                                    onClick = { modelName = option.name },
+                                    label = { Text(option.displayName) },
+                                )
+                            }
+                        }
+                        Text(
+                            "Match sensitivity: ${(sensitivity * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Slider(
+                            value = sensitivity,
+                            onValueChange = { sensitivity = (it * 20).roundToInt() / 20f },
+                            valueRange = 0.4f..0.95f,
+                            steps = 10,
+                        )
+                    }
+                }
+            }
+            item {
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Text("Who and what triggers an alert", style = MaterialTheme.typography.titleLarge)
+                        SpeechSwitchRow(
+                            title = "My name and aliases",
+                            detail = if (identityAvailable) {
+                                "Use your approved identity enrollment as alert phrases."
+                            } else {
+                                "Enroll your name from My context to use this option."
+                            },
+                            checked = listenForIdentity,
+                            onCheckedChange = { listenForIdentity = it },
+                            switchEnabled = identityAvailable,
+                        )
+                        SpeechSwitchRow(
+                            title = "People in my context",
+                            detail = "Off by default. Turn on only if their names should alert you too.",
+                            checked = listenForPeople,
+                            onCheckedChange = { listenForPeople = it },
+                        )
+                        OutlinedTextField(
+                            value = phrases,
+                            onValueChange = { phrases = it.take(820) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Global phrases") },
+                            placeholder = { Text("excuse me, front desk") },
+                            supportingText = { Text("Separate up to 20 phrases with commas.") },
+                            minLines = 2,
+                        )
+                    }
+                }
+            }
+            item {
+                Button(
+                    onClick = {
+                        onSave(
+                            SpeechSettings(
+                                enabled = enabled,
+                                model = model,
+                                sensitivity = sensitivity,
+                                listenForIdentity = listenForIdentity,
+                                listenForPeople = listenForPeople,
+                                globalPhrases = parseCommaList(phrases, 20).map { it.take(40) },
+                            ),
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Save speech settings") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeechSwitchRow(
+    title: String,
+    detail: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    switchEnabled: Boolean = true,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(
+            checked = checked && switchEnabled,
+            onCheckedChange = onCheckedChange,
+            enabled = switchEnabled,
+        )
+    }
+}
 
 @Composable
 fun IdentityEnrollmentScreen(
@@ -198,7 +345,7 @@ fun PersonMemoryEditorScreen(
         ) {
             item {
                 Text(
-                    "People are added only when you enter them here. Their names help local transcription; they do not trigger your name alert.",
+                    "People are added only when you enter them here. Their names help local transcription and trigger alerts only if you enable that audience in Speech and names.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

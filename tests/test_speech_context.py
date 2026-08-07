@@ -2,8 +2,17 @@ from __future__ import annotations
 
 import unittest
 
-from backend.profiles.speech_context import KnownPerson, ManualContext, SpeechContext, UserIdentity
+from backend.profiles.speech_context import (
+    KnownPerson,
+    ManualContext,
+    SpeechContext,
+    SpeechMode,
+    SpeechModel,
+    SpeechSettings,
+    UserIdentity,
+)
 from backend.profiles.wire_codec import decode_profile
+from backend.app.hub_server import _bounded_phrase_triggers
 
 
 class SpeechContextTest(unittest.TestCase):
@@ -30,6 +39,14 @@ class SpeechContextTest(unittest.TestCase):
                 "name": "Home",
                 "phrase_triggers": [],
                 "speech_context": {
+                    "settings": {
+                        "enabled": True,
+                        "model": "base_en",
+                        "sensitivity": 0.72,
+                        "listen_for_identity": True,
+                        "listen_for_people": True,
+                        "global_phrases": ["front desk"],
+                    },
                     "identity": {
                         "name": "Akshaj",
                         "pronunciation": "Ak-shudge",
@@ -49,6 +66,7 @@ class SpeechContextTest(unittest.TestCase):
                         {"title": "Tuesday class", "details": "Building 4"},
                     ],
                 },
+                "speech_mode": "always_on",
                 "sound_rules": [
                     {
                         "event": "name_called",
@@ -67,6 +85,11 @@ class SpeechContextTest(unittest.TestCase):
         self.assertEqual(profile.speech_context.identity.name, "Akshaj")
         self.assertEqual(profile.speech_context.people[0].name, "Maya")
         self.assertEqual(profile.speech_context.contexts[0].details, "Building 4")
+        self.assertEqual(profile.speech_context.settings.model, SpeechModel.BASE_EN)
+        self.assertEqual(profile.speech_context.settings.sensitivity, 0.72)
+        self.assertEqual(profile.speech_mode, SpeechMode.ALWAYS_ON)
+        self.assertIn("Maya", profile.speech_context.trigger_phrases(profile.phrase_triggers))
+        self.assertIn("front desk", profile.speech_context.trigger_phrases())
 
     def test_profile_without_context_remains_backward_compatible(self) -> None:
         profile = decode_profile(
@@ -90,6 +113,65 @@ class SpeechContextTest(unittest.TestCase):
 
         self.assertIsNone(profile.speech_context.identity)
         self.assertEqual(profile.speech_context.people, ())
+        self.assertEqual(profile.speech_context.settings, SpeechSettings())
+        self.assertEqual(profile.speech_mode, SpeechMode.INHERIT)
+
+    def test_people_are_hotwords_but_not_triggers_until_enabled(self) -> None:
+        context = SpeechContext(
+            identity=UserIdentity("Rohan", aliases=("Ro",)),
+            people=(KnownPerson("Maya", aliases=("May",)),),
+        )
+
+        self.assertIn("Maya", context.hotwords())
+        self.assertNotIn("Maya", context.trigger_phrases())
+        enabled = SpeechContext(
+            identity=context.identity,
+            people=context.people,
+            settings=SpeechSettings(listen_for_people=True),
+        )
+        self.assertIn("Maya", enabled.trigger_phrases())
+        self.assertIn("May", enabled.trigger_phrases())
+
+    def test_invalid_speech_settings_are_rejected(self) -> None:
+        base = {
+            "id": "home",
+            "name": "Home",
+            "sound_rules": [
+                {
+                    "event": "name_called",
+                    "enabled": True,
+                    "confidence_threshold": 0.6,
+                    "category": "attention",
+                    "pattern": "long_pulse",
+                    "strength": "standard",
+                    "requires_ack": False,
+                    "cooldown_seconds": 20,
+                }
+            ],
+        }
+        for settings in (
+            {"sensitivity": 0.2},
+            {"model": "large_en"},
+            {"enabled": "yes"},
+        ):
+            with self.subTest(settings=settings):
+                document = {**base, "speech_context": {"settings": settings}}
+                with self.assertRaises(ValueError):
+                    decode_profile(document)
+
+    def test_runtime_phrase_triggers_are_bounded_and_trimmed(self) -> None:
+        self.assertEqual(_bounded_phrase_triggers(["  front desk  "]), ["front desk"])
+        invalid_values = (
+            [""],
+            ["x" * 41],
+            [1],
+            ["phrase"] * 21,
+            "phrase",
+        )
+        for value in invalid_values:
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    _bounded_phrase_triggers(value)
 
 
 if __name__ == "__main__":

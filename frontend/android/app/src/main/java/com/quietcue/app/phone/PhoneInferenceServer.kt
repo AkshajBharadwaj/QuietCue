@@ -11,17 +11,21 @@ import java.net.Socket
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+import com.quietcue.app.domain.MemoryBank
+import com.quietcue.app.phone.speech.SpeechGate
 import org.json.JSONArray
 import org.json.JSONObject
 
 class PhoneInferenceServer(
     private val classifier: PhoneSoundClassifier,
     profileProvider: () -> com.quietcue.app.domain.AlertProfile,
+    memoryBankProvider: () -> MemoryBank = { MemoryBank() },
+    speechGate: SpeechGate? = null,
     private val pairingToken: String = "",
     private val port: Int = DEFAULT_PORT,
 ) : Closeable {
     private val running = AtomicBoolean(false)
-    private val inference = PhoneInferenceEngine(classifier)
+    private val inference = PhoneInferenceEngine(classifier, profileProvider, memoryBankProvider, speechGate)
     private val decisions = PhoneProfileDecisionEngine(profileProvider)
     @Volatile private var socket: ServerSocket? = null
 
@@ -83,7 +87,11 @@ class PhoneInferenceServer(
                         .put("protocol", 1)
                         .put(
                             "capabilities",
-                            JSONArray().put("sound_confirmation").put("phone_onnx_inference"),
+                            JSONArray()
+                                .put("sound_confirmation")
+                                .put("phone_onnx_inference")
+                                .put("speech_detection")
+                                .put("speech_to_text_local"),
                         ),
                 ),
             )
@@ -136,10 +144,24 @@ class PhoneInferenceServer(
         require(sequence >= 0 && capturedAtMs > 0) { "Invalid audio sequence metadata" }
 
         val totalStarted = System.nanoTime()
-        val result = inference.process(message.payload)
-        val decision = decisions.decide(result.events, capturedAtMs, sequence)
         val edge = body.optJSONObject("edge_analysis")
-        val voiceDetected = edge?.optBoolean("voice_activity") == true || result.speechConfidence >= 0.10
+        val edgeVoiceDetected = edge?.optBoolean("voice_activity") == true
+        val phraseDocument = body.optJSONArray("phrase_triggers")
+        val additionalPhrases = buildList {
+            if (phraseDocument != null) {
+                require(phraseDocument.length() <= 20) { "At most 20 phrase triggers are allowed" }
+                for (index in 0 until phraseDocument.length()) {
+                    val rawPhrase = phraseDocument.get(index)
+                    require(rawPhrase is String) { "Phrase triggers must be strings" }
+                    val phrase = rawPhrase.trim()
+                    require(phrase.isNotEmpty() && phrase.length <= 40) { "Invalid phrase trigger" }
+                    add(phrase)
+                }
+            }
+        }
+        val result = inference.process(message.payload, edgeVoiceDetected, additionalPhrases)
+        val decision = decisions.decide(result.events, capturedAtMs, sequence)
+        val voiceDetected = edgeVoiceDetected || result.speechConfidence >= 0.10
         val events = JSONArray().apply {
             result.events.forEach { event ->
                 put(
@@ -165,9 +187,9 @@ class PhoneInferenceServer(
             .put("voice_detected", voiceDetected)
             .put("speech_confidence", result.speechConfidence)
             .put("transcript", JSONObject.NULL)
-            .put("speech_pending", false)
-            .put("speech_inference_ms", JSONObject.NULL)
-            .put("speech_error", JSONObject.NULL)
+            .put("speech_pending", result.speechPending)
+            .put("speech_inference_ms", result.speechInferenceMs ?: JSONObject.NULL)
+            .put("speech_error", result.speechError ?: JSONObject.NULL)
             .put("inference_pending", result.pending)
             .put("inference_ms", result.inferenceMs)
             .put("total_ms", totalMs)
@@ -181,6 +203,11 @@ class PhoneInferenceServer(
             it.copy(
                 lastEvent = latestEvent ?: it.lastEvent,
                 inferenceMs = if (result.pending) it.inferenceMs else result.inferenceMs,
+                speechModelLoaded = result.speechModelLoaded,
+                speechListening = result.speechListening,
+                speechPending = result.speechPending,
+                speechInferenceMs = result.speechInferenceMs ?: it.speechInferenceMs,
+                speechError = result.speechError,
                 error = null,
             )
         }
@@ -190,6 +217,7 @@ class PhoneInferenceServer(
     override fun close() {
         running.set(false)
         socket?.close()
+        inference.close()
     }
 
     companion object {

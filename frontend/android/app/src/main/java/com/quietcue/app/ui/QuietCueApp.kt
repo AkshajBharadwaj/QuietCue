@@ -41,6 +41,7 @@ private enum class CreationFlow {
 }
 
 private enum class MemoryEditorFlow {
+    SPEECH,
     IDENTITY,
     PERSON,
     CONTEXT,
@@ -132,6 +133,19 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
             onBack = { memoryEditorFlowName = null },
             onSave = {
                 viewModel.saveIdentity(it)
+                memoryEditorFlowName = null
+            },
+        )
+        return
+    }
+
+    if (memoryEditorFlow == MemoryEditorFlow.SPEECH) {
+        SpeechSettingsScreen(
+            initial = memoryBank.speechSettings,
+            identityAvailable = memoryBank.identity != null,
+            onBack = { memoryEditorFlowName = null },
+            onSave = {
+                viewModel.saveSpeechSettings(it)
                 memoryEditorFlowName = null
             },
         )
@@ -264,6 +278,7 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
             MainTab.MEMORY -> MemoryBankScreen(
                 bank = memoryBank,
                 contentPadding = contentPadding,
+                onEditSpeech = { memoryEditorFlowName = MemoryEditorFlow.SPEECH.name },
                 onEditIdentity = { memoryEditorFlowName = MemoryEditorFlow.IDENTITY.name },
                 onEditPerson = { person ->
                     memoryEditorItemId = person?.id

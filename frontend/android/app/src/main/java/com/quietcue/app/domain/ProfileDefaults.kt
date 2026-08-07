@@ -98,6 +98,8 @@ object ProfileDefaults {
         icon = ProfileIcon.WORK,
         color = ProfileColor.OCEAN,
         activation = ActivationRule(activity = ActivityContext.WORK_SCHOOL),
+        speechMode = SpeechMode.ALWAYS_ON,
+        phraseTriggers = listOf("front desk"),
         soundRules = rules(
             disabled = setOf(SoundType.BABY_CRYING, SoundType.KITCHEN_TIMER),
             overrides = mapOf(
@@ -149,6 +151,7 @@ object ProfileDefaults {
         color = ProfileColor.VIOLET,
         quietHours = QuietHours(enabled = true, startMinutes = 22 * 60, endMinutes = 7 * 60),
         activation = ActivationRule(activity = ActivityContext.SLEEPING),
+        speechMode = SpeechMode.OFF,
         soundRules = rules(
             disabled = setOf(
                 SoundType.DOORBELL_KNOCK,

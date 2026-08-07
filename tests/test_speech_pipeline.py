@@ -46,7 +46,30 @@ class SpeechPipelineTest(unittest.TestCase):
 
         self.assertIsNotNone(match)
         self.assertEqual(match.phrase, "Akshaj")
-        self.assertEqual(match.confidence, 0.75)
+        self.assertEqual(match.confidence, 0.42)
+
+    def test_name_matching_tolerates_common_transcription_errors(self) -> None:
+        for transcription in ("Hey Roan", "Hey Rowan", "Hey Ro han"):
+            with self.subTest(transcription=transcription):
+                match = find_phrase_match(Transcript(transcription), ["Rohan"])
+
+                self.assertIsNotNone(match)
+                self.assertEqual(match.phrase, "Rohan")
+                self.assertGreaterEqual(match.confidence, 0.6)
+
+    def test_phonetic_substitution_matches_but_unrelated_name_does_not(self) -> None:
+        match = find_phrase_match(Transcript("Please call Stefan"), ["Stephan"])
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.confidence, 0.9)
+        self.assertIsNone(find_phrase_match(Transcript("Please call Maya"), ["Rohan"]))
+
+    def test_sensitivity_is_applied_before_asr_confidence_weighting(self) -> None:
+        match = find_phrase_match(Transcript("Rowan", 0.5), ["Rohan"], sensitivity=0.75)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.confidence, 0.4)
+        self.assertIsNone(find_phrase_match(Transcript("Rowan"), ["Rohan"], sensitivity=0.85))
 
     def test_buffered_recognizer_returns_phrase_from_background_job(self) -> None:
         transcriber = _FixedTranscriber("Akshaj, the alarm is sounding")
@@ -126,6 +149,25 @@ class SpeechPipelineTest(unittest.TestCase):
 
         self.assertIsNone(completed)
         self.assertFalse(pending)
+
+    def test_disabled_pipeline_never_invokes_transcriber(self) -> None:
+        from backend.inference.demo_classifier import DemoToneSoundClassifier
+        from backend.inference.pipeline import HubInferencePipeline
+
+        transcriber = _FixedTranscriber("Hey Alex")
+        pipeline = HubInferencePipeline(DemoToneSoundClassifier(), transcriber)
+        pcm = b"\x00\x01" * 16_000
+
+        first = pipeline.process_pcm16(
+            pcm,
+            16_000,
+            {"voice_activity": True},
+            ["Alex"],
+            speech_enabled=False,
+        )
+
+        self.assertFalse(first.speech_pending)
+        self.assertEqual(transcriber.calls, 0)
 
 
 if __name__ == "__main__":

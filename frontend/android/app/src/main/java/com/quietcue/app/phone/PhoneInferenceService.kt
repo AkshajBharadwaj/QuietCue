@@ -11,8 +11,14 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.quietcue.app.R
 import com.quietcue.app.data.ProfileRepository
+import com.quietcue.app.data.MemoryRepository
 import com.quietcue.app.domain.AlertProfile
+import com.quietcue.app.domain.MemoryBank
 import com.quietcue.app.domain.ProfileDefaults
+import com.quietcue.app.domain.SpeechModel
+import com.quietcue.app.phone.speech.PhoneTranscriber
+import com.quietcue.app.phone.speech.SpeechGate
+import com.quietcue.app.phone.speech.WhisperOnnxTranscriber
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
@@ -26,7 +32,9 @@ class PhoneInferenceService : Service() {
     private val executor = Executors.newSingleThreadExecutor()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeProfile = AtomicReference<AlertProfile>(ProfileDefaults.all().first())
+    private val memoryBank = AtomicReference(MemoryBank())
     @Volatile private var classifier: PhoneYamnetClassifier? = null
+    @Volatile private var transcriber: PhoneTranscriber? = null
     @Volatile private var server: PhoneInferenceServer? = null
 
     override fun onCreate() {
@@ -34,19 +42,35 @@ class PhoneInferenceService : Service() {
         createNotificationChannel()
         startInForeground("Loading the on-phone sound model")
         val repository = ProfileRepository(applicationContext)
+        val memoryRepository = MemoryRepository(applicationContext)
         scope.launch {
             repository.catalog.collectLatest { catalog ->
                 catalog.activeProfile?.let(activeProfile::set)
             }
+        }
+        scope.launch {
+            memoryRepository.bank.collectLatest(memoryBank::set)
         }
         executor.execute {
             try {
                 val loadedClassifier = PhoneYamnetClassifier(applicationContext)
                 classifier = loadedClassifier
                 val preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+                val speechGate = SpeechGate(
+                    transcriberFactory = { model: SpeechModel ->
+                        WhisperOnnxTranscriber(applicationContext, model).also { loaded ->
+                            transcriber = loaded
+                            PhoneInferenceStatus.update {
+                                it.copy(speechModelLoaded = true, speechError = null)
+                            }
+                        }
+                    },
+                )
                 val loadedServer = PhoneInferenceServer(
                     classifier = loadedClassifier,
                     profileProvider = activeProfile::get,
+                    memoryBankProvider = memoryBank::get,
+                    speechGate = speechGate,
                     pairingToken = preferences.getString(PAIRING_TOKEN, "").orEmpty(),
                 )
                 server = loadedServer
@@ -71,6 +95,7 @@ class PhoneInferenceService : Service() {
 
     override fun onDestroy() {
         server?.close()
+        transcriber = null
         classifier?.close()
         scope.cancel()
         executor.shutdownNow()
