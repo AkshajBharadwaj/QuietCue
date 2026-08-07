@@ -3,9 +3,63 @@
 QuietCue is an AI-assisted accessibility system that turns important environmental
 sounds into clear haptic alerts for deaf and hard-of-hearing users.
 
+It captures audio at an Arduino Uno Q, performs local environmental-sound and
+optional speech inference on a Copilot+ PC or compatible Android phone, applies
+the user's active profile, and returns an urgency-coded vibration command to the
+wearable. The core alert path does not require a cloud service.
+
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system diagram and
 current implementation status, and [`docs/DEMO.md`](docs/DEMO.md) for the
 3-minute demo runbook.
+
+## Install from scratch on a Copilot+ PC
+
+### Prerequisites
+
+- Windows 11 on the target Copilot+ PC.
+- [Git](https://git-scm.com/download/win).
+- Python 3.10 or newer available as `python` (Python 3.13 is supported).
+- Optional connected demo: an Arduino Uno Q, USB/ALSA microphone, safely driven
+  vibration motor, and Android 8.0+ device. The software-only verification below
+  needs none of these.
+
+Open PowerShell and clone the personal repository:
+
+```powershell
+git clone https://github.com/AkshajBharadwaj/quietcue.git
+cd quietcue
+python --version
+```
+
+Verify the complete software path with no downloads or third-party Python
+packages:
+
+```powershell
+python scripts\run_no_hardware_demo.py --event fire_alarm --profile home
+python scripts\run_no_hardware_demo.py --event doorbell_knock --profile sleep
+```
+
+The first command must report an `urgent_repeat` alert; the second must report
+that Sleep mode suppressed the doorbell. This deterministic mode is a functional
+simulator, not a safety classifier.
+
+To run the connected environmental classifier, create the environment and start
+the hub with the checked-in ONNX model:
+
+```powershell
+.\scripts\run_demo.ps1 -Classifier onnx -NoSpeech
+```
+
+The first run installs `backend/requirements-onnx.txt`. Open
+`http://127.0.0.1:8787/api/state` to inspect device state, profile decisions,
+alerts, delivery status, and latency. On Snapdragon Windows the runtime attempts
+the available QNN/NPU path and safely falls back to ONNX Runtime CPU if that
+provider is unavailable. Stop the hub with Ctrl+C.
+
+For the full Uno Q microphone-to-haptic flow, complete the one-time board setup
+in [`docs/UNO_Q_MICROPHONE.md`](docs/UNO_Q_MICROPHONE.md), then run
+`./scripts/run_demo.sh --live` from WSL, Linux, or macOS. Android build and
+installation instructions are in [`frontend/android/README.md`](frontend/android/README.md).
 
 ## Quick start (Windows hub)
 
@@ -176,7 +230,14 @@ python3 -m unittest discover -s tests -v
 
 ## Team and submission
 
-- **Team members:** _add names and emails here before submission._
+### Team members
+
+- Akshaj Bharadwaj — akshaj.bharadwaj@gmail.com
+- Rohan Krishnan — rohankrishnan2000@gmail.com
+- Rikhil Rao — raorikhil@gmail.com
+- Shreya Shirsathe — sshirsathe2023@gmail.com
+- Sarayu Pochimireddy — sarayu.pr11@gmail.com
+
 - **License:** [MIT](LICENSE).
 - **Setup from scratch:** Quick start above (hub) plus
   [`docs/UNO_Q_MICROPHONE.md`](docs/UNO_Q_MICROPHONE.md) (board) — or use the
@@ -186,6 +247,7 @@ python3 -m unittest discover -s tests -v
 - **Benchmarks:** `docs/benchmarks/` (QUAD conversion and profiling reports).
 - **Tests:** `python3 -m unittest discover -s tests -v` (no ML dependencies
   needed).
+- **Submission checklist:** [`docs/SUBMISSION_CHECKLIST.md`](docs/SUBMISSION_CHECKLIST.md).
 
 No secrets belong in this repository: pairing tokens, QUAD MCP tokens,
 Tailscale keys, and Wi-Fi credentials are environment variables only.
