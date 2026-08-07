@@ -21,6 +21,7 @@ import com.quietcue.app.domain.ProfileCatalog
 import com.quietcue.app.domain.ProfileDefaults
 import com.quietcue.app.domain.RuntimeState
 import com.quietcue.app.domain.EnrollmentCapture
+import com.quietcue.app.domain.InferenceDevice
 import com.quietcue.app.domain.SoundDefinition
 import com.quietcue.app.domain.SpeechSettings
 import com.quietcue.app.domain.PlaceTransition
@@ -292,6 +293,34 @@ class ProfileViewModel(
 
     fun clearMessage() {
         _message.value = null
+    }
+
+    fun setInferenceDevice(device: InferenceDevice) {
+        if (_runtimeState.value.requestedInferenceDevice == device &&
+            !_runtimeState.value.inferenceSwitchPending
+        ) {
+            return
+        }
+        _runtimeState.value = _runtimeState.value.copy(
+            requestedInferenceDevice = device,
+            inferenceSwitchPending = true,
+            inferenceRoutingError = null,
+        )
+        viewModelScope.launch {
+            runCatching {
+                alertRepository.setInferenceDevice(device)
+                alertRepository.fetchState()
+            }.onSuccess { state ->
+                _runtimeState.value = state
+                _message.value = "${device.displayName} inference selected"
+            }.onFailure { error ->
+                _runtimeState.value = _runtimeState.value.copy(
+                    inferenceSwitchPending = false,
+                    inferenceRoutingError = error.message,
+                )
+                _message.value = error.message ?: "Could not switch inference device"
+            }
+        }
     }
 
     fun stopHaptic(eventId: String) {

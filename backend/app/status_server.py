@@ -14,6 +14,7 @@ class StatusHttpServer:
         snapshot: Callable[[], dict[str, Any]],
         update_profile: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         stop_haptic: Callable[[str | None], dict[str, Any]] | None = None,
+        update_inference_device: Callable[[str], dict[str, Any]] | None = None,
         start_enrollment: Callable[[int], dict[str, Any]] | None = None,
         enrollment_status: Callable[[], dict[str, Any]] | None = None,
         cancel_enrollment: Callable[[], dict[str, Any]] | None = None,
@@ -21,6 +22,7 @@ class StatusHttpServer:
         self._snapshot = snapshot
         self._update_profile = update_profile
         self._stop_haptic = stop_haptic
+        self._update_inference_device = update_inference_device
         self._start_enrollment = start_enrollment
         self._enrollment_status = enrollment_status
         self._cancel_enrollment = cancel_enrollment
@@ -70,6 +72,23 @@ class StatusHttpServer:
                 if event_id is not None and not isinstance(event_id, str):
                     raise ValueError("event_id must be a string")
                 await self._respond(writer, 200, self._stop_haptic(event_id))
+            elif (
+                method == "POST"
+                and path == "/api/inference/device"
+                and self._update_inference_device is not None
+            ):
+                content_length = _content_length(header_lines[1:])
+                if content_length < 2 or content_length > 4 * 1024:
+                    raise ValueError("Inference device command has an invalid size")
+                body = await reader.readexactly(content_length)
+                document = json.loads(body)
+                if not isinstance(document, dict) or not isinstance(document.get("device"), str):
+                    raise ValueError("Inference device command must include a device string")
+                await self._respond(
+                    writer,
+                    200,
+                    self._update_inference_device(document["device"]),
+                )
             elif (
                 method == "POST"
                 and path == "/api/enrollment/start"

@@ -1,5 +1,6 @@
 package com.quietcue.app.data
 
+import com.quietcue.app.domain.InferenceDevice
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -15,6 +16,13 @@ class AlertRepositoryTest {
                   "status": "ready",
                   "active_profile": {"id": "home", "name": "Home"},
                   "hub": {"audio_source_connected": true},
+                  "inference": {
+                    "requested_device": "samsung_phone",
+                    "active_device": "samsung_phone",
+                    "samsung_available": true,
+                    "switch_pending": false,
+                    "error": null
+                  },
                   "latest_alert": {
                     "event_id": "evt_test",
                     "event": "fire_alarm",
@@ -41,5 +49,9 @@ class AlertRepositoryTest {
         assertEquals(41, state.latestAlert?.totalLatencyMs)
         assertTrue(state.latestAlert?.fallbackToPhone == true)
         assertTrue(state.latestAlert?.hapticActive == true)
+        assertEquals(InferenceDevice.SAMSUNG_PHONE, state.requestedInferenceDevice)
+        assertEquals(InferenceDevice.SAMSUNG_PHONE, state.activeInferenceDevice)
+        assertTrue(state.samsungInferenceAvailable)
+        assertEquals(null, state.inferenceRoutingError)
     }
 }

@@ -21,7 +21,7 @@ class PhoneInferenceServer(
     profileProvider: () -> com.quietcue.app.domain.AlertProfile,
     memoryBankProvider: () -> MemoryBank = { MemoryBank() },
     speechGate: SpeechGate? = null,
-    private val pairingToken: String = "",
+    private val pairingTokenProvider: () -> String = { "" },
     private val port: Int = DEFAULT_PORT,
 ) : Closeable {
     private val running = AtomicBoolean(false)
@@ -67,7 +67,8 @@ class PhoneInferenceServer(
             val hello = QuietCueWireProtocol.read(input)
             if (hello.kind != "edge_hello") throw IOException("First message must be edge_hello")
             val suppliedToken = hello.body.optString("pairing_token")
-            if (pairingToken.isNotEmpty() && suppliedToken != pairingToken) {
+            val expectedToken = pairingTokenProvider()
+            if (expectedToken.isNotEmpty() && suppliedToken != expectedToken) {
                 QuietCueWireProtocol.write(
                     output,
                     QuietCueWireMessage(

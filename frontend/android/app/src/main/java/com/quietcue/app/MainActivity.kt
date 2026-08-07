@@ -18,10 +18,7 @@ import com.quietcue.app.ui.theme.QuietCueTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        ContextCompat.startForegroundService(
-            this,
-            Intent(this, PhoneInferenceService::class.java),
-        )
+        startPhoneInference(intent)
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -38,5 +35,19 @@ class MainActivity : ComponentActivity() {
                 QuietCueApp(viewModel = profileViewModel)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        startPhoneInference(intent)
+    }
+
+    private fun startPhoneInference(sourceIntent: Intent?) {
+        val serviceIntent = Intent(this, PhoneInferenceService::class.java)
+        sourceIntent?.getStringExtra(PhoneInferenceService.EXTRA_PAIRING_TOKEN)?.let { token ->
+            serviceIntent.putExtra(PhoneInferenceService.EXTRA_PAIRING_TOKEN, token)
+        }
+        ContextCompat.startForegroundService(this, serviceIntent)
     }
 }

@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.quietcue.app.domain.ProfileCatalog
+import com.quietcue.app.domain.InferenceDevice
 import com.quietcue.app.domain.RuntimeState
 import com.quietcue.app.domain.PlaceTransition
 import com.quietcue.app.domain.SmartProfileState
@@ -51,6 +52,7 @@ fun DashboardScreen(
     onAcceptSmartSuggestion: () -> Unit,
     onAlwaysSmartSuggestion: () -> Unit,
     onDismissSmartSuggestion: () -> Unit,
+    onInferenceDeviceSelected: (InferenceDevice) -> Unit,
     onStopHaptic: (String) -> Unit,
 ) {
     val profile = catalog.activeProfile
@@ -157,21 +159,10 @@ fun DashboardScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatusRow(Icons.Rounded.Hearing, "Phone app", "Profile controls available", true)
-                StatusRow(
-                    Icons.Rounded.Hearing,
-                    "Phone inference server",
-                    when {
-                        phoneInferenceState.error != null -> phoneInferenceState.error
-                        phoneInferenceState.clientConnected -> {
-                            "UNO Q connected • ${phoneInferenceState.provider}" +
-                                (phoneInferenceState.inferenceMs?.let { " • ${it.toInt()} ms" } ?: "")
-                        }
-                        phoneInferenceState.modelReady -> {
-                            "Listening on TCP ${phoneInferenceState.port} • ${phoneInferenceState.provider}"
-                        }
-                        else -> "Loading the quantized sound model"
-                    },
-                    phoneInferenceState.running && phoneInferenceState.modelReady,
+                InferenceDeviceCard(
+                    runtimeState = runtimeState,
+                    phoneInferenceState = phoneInferenceState,
+                    onSelected = onInferenceDeviceSelected,
                 )
                 StatusRow(
                     Icons.Rounded.CloudOff,
@@ -282,6 +273,105 @@ fun DashboardScreen(
         }
     }
 
+}
+
+@Composable
+private fun InferenceDeviceCard(
+    runtimeState: RuntimeState,
+    phoneInferenceState: PhoneInferenceServerState,
+    onSelected: (InferenceDevice) -> Unit,
+) {
+    val requested = runtimeState.requestedInferenceDevice
+    val active = runtimeState.activeInferenceDevice
+    val status = when {
+        runtimeState.inferenceRoutingError != null -> runtimeState.inferenceRoutingError
+        runtimeState.inferenceSwitchPending -> {
+            "Switching to ${requested.displayName} • ${active.displayName} is handling audio"
+        }
+        active == InferenceDevice.SAMSUNG_PHONE -> {
+            "Samsung Galaxy • ${phoneInferenceState.provider}" +
+                (phoneInferenceState.inferenceMs?.let { " • ${it.toInt()} ms" } ?: "")
+        }
+        else -> "PC • local ONNX inference"
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(Icons.Rounded.GraphicEq, contentDescription = null)
+                Column(Modifier.weight(1f)) {
+                    Text("Inference device", style = MaterialTheme.typography.titleSmall)
+                    Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Spacer(
+                    Modifier
+                        .size(12.dp)
+                        .background(
+                            if (runtimeState.backendConnected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            },
+                            CircleShape,
+                        ),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (requested == InferenceDevice.COPILOT_PC) {
+                    Button(
+                        onClick = {},
+                        enabled = runtimeState.backendConnected,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("PC")
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { onSelected(InferenceDevice.COPILOT_PC) },
+                        enabled = runtimeState.backendConnected,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("PC")
+                    }
+                }
+                if (requested == InferenceDevice.SAMSUNG_PHONE) {
+                    Button(
+                        onClick = {},
+                        enabled = runtimeState.backendConnected,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Samsung")
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { onSelected(InferenceDevice.SAMSUNG_PHONE) },
+                        enabled = runtimeState.backendConnected &&
+                            runtimeState.samsungInferenceAvailable &&
+                            phoneInferenceState.modelReady,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Samsung")
+                    }
+                }
+            }
+            if (!runtimeState.samsungInferenceAvailable) {
+                Text(
+                    "Connect the Samsung and start the demo to enable phone inference.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (!phoneInferenceState.modelReady) {
+                Text(
+                    "The Samsung sound model is still loading.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }
 
 @Composable

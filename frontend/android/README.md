@@ -45,8 +45,9 @@ deliver to the STM32 haptic firmware.
   departure demonstrations without physically moving the phone.
 
 The phone inference service starts when the app opens and remains visible as a
-foreground notification. The dashboard shows whether the model is ready, whether
-an Uno Q is connected, and the latest phone inference latency. It also polls the
+foreground notification. The dashboard's **Inference device** card shows whether
+the PC or Samsung is processing audio and switches the live stream without
+restarting the Uno Q. It also shows the latest Samsung inference latency and polls the
 computer development backend at `http://127.0.0.1:8787/api/state` when available.
 Full event history remains future work; local profile editing,
 profile drafting, and enrollment storage continue to work without a backend
@@ -84,9 +85,23 @@ reach the motor.
 
 ## Use the Samsung as the inference hub
 
-Put the phone and Uno Q on the same trusted Wi-Fi network, open QuietCue once,
-and confirm the dashboard says `Listening on TCP 8765 • onnx_cpu`. Then run on
-the Uno Q, replacing `PHONE_IP` with the phone's Wi-Fi address:
+For the normal connected demo, attach the Samsung over USB and run
+`scripts/run_demo.sh --live`. The launcher forwards the private phone inference
+port to the PC hub and the **PC** and **Samsung** buttons become available under
+System status. The Uno Q keeps one stable connection to the PC hub; when Samsung
+is selected the hub forwards each audio frame to the phone and returns the phone's
+alert decision. If the phone disconnects, the PC handles audio until it is back.
+
+The PC and Samsung use the same quantized W8A8 YAMNet model and AudioSet labels,
+but not the same runtime: the PC uses the Python/NumPy frontend with ONNX Runtime
+(and can use an available NPU), while Android uses the Kotlin frontend and ONNX
+Runtime CPU. Their confidence scores and latency can therefore differ. The PC
+uses Faster-Whisper for enabled speech rules; Samsung uses the staged Whisper
+ONNX implementation.
+
+For a phone-only network setup without the PC forwarding hub, put the phone and
+Uno Q on the same trusted Wi-Fi network, open QuietCue once, and run on the Uno Q,
+replacing `PHONE_IP` with the phone's Wi-Fi address:
 
 ```bash
 python3 -u -m uno_q.linux.transport.hub_client \
@@ -115,7 +130,7 @@ run the staged Whisper ONNX encoder/decoder locally when speech is enabled and a
 configured phrase is available; the model is loaded lazily and decoding never
 blocks environmental inference. Model weights are not committed. Follow
 [`../../docs/WHISPER_ONNX.md`](../../docs/WHISPER_ONNX.md) to validate and stage
-the Tiny or Base assets. Enrolled-sound matching remains a computer-hub feature.
+the Tiny or Base assets.
 The pairing token is optional during development, so port `8765` should only be
 exposed on a trusted LAN or private overlay network.
 

@@ -23,6 +23,18 @@ data class DetectedAlert(
             .joinToString(" ") { word -> word.replaceFirstChar(Char::uppercase) }
 }
 
+enum class InferenceDevice(val wireValue: String, val displayName: String) {
+    COPILOT_PC("copilot_pc", "PC"),
+    SAMSUNG_PHONE("samsung_phone", "Samsung"),
+    ;
+
+    companion object {
+        fun fromWire(value: String?): InferenceDevice = entries.firstOrNull {
+            it.wireValue == value
+        } ?: COPILOT_PC
+    }
+}
+
 data class RuntimeState(
     val backendConnected: Boolean = false,
     val audioSourceConnected: Boolean = false,
@@ -30,4 +42,9 @@ data class RuntimeState(
     val latestAlert: DetectedAlert? = null,
     val errorMessage: String? = null,
     val stopInProgress: Boolean = false,
+    val requestedInferenceDevice: InferenceDevice = InferenceDevice.COPILOT_PC,
+    val activeInferenceDevice: InferenceDevice = InferenceDevice.COPILOT_PC,
+    val samsungInferenceAvailable: Boolean = false,
+    val inferenceSwitchPending: Boolean = false,
+    val inferenceRoutingError: String? = null,
 )

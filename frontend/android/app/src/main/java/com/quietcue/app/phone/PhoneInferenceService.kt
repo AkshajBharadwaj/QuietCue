@@ -97,10 +97,12 @@ class PhoneInferenceService : Service() {
                     profileProvider = activeProfile::get,
                     memoryBankProvider = memoryBank::get,
                     speechGate = speechGate,
-                    pairingToken = preferences.getString(PAIRING_TOKEN, "").orEmpty(),
+                    pairingTokenProvider = {
+                        preferences.getString(PAIRING_TOKEN, "").orEmpty()
+                    },
                 )
                 server = loadedServer
-                updateNotification("Listening on TCP ${PhoneInferenceServer.DEFAULT_PORT} • ${loadedClassifier.provider}")
+                updateNotification("Samsung inference ready • ${loadedClassifier.provider}")
                 loadedServer.serveForever()
             } catch (error: Throwable) {
                 PhoneInferenceStatus.update {
@@ -115,7 +117,15 @@ class PhoneInferenceService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.getStringExtra(EXTRA_PAIRING_TOKEN)?.let { token ->
+            getSharedPreferences(PREFERENCES, MODE_PRIVATE)
+                .edit()
+                .putString(PAIRING_TOKEN, token)
+                .apply()
+        }
+        return START_STICKY
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -168,6 +178,7 @@ class PhoneInferenceService : Service() {
         private const val NOTIFICATION_ID = 2101
         private const val PREFERENCES = "quietcue_inference"
         private const val PAIRING_TOKEN = "pairing_token"
+        const val EXTRA_PAIRING_TOKEN = "pairing_token"
         private const val ALERT_POLL_INTERVAL_MS = 1_000L
     }
 }

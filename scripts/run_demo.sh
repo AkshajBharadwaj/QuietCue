@@ -24,6 +24,8 @@ hub_address=""
 input_device="auto"
 hub_pid=""
 showcase_directory=""
+phone_inference_endpoint=""
+phone_forward_port="18765"
 
 usage() {
     printf '%s\n' \
@@ -99,6 +101,9 @@ cleanup() {
     fi
     if [[ -n "$showcase_directory" && -d "$showcase_directory" ]]; then
         rm -rf -- "$showcase_directory"
+    fi
+    if [[ -n "$phone_inference_endpoint" ]] && command -v adb >/dev/null 2>&1; then
+        adb forward --remove "tcp:$phone_forward_port" >/dev/null 2>&1 || true
     fi
 }
 trap cleanup EXIT INT TERM
@@ -225,12 +230,9 @@ fi
 
 pairing_token="${QUIETCUE_PAIRING_TOKEN:-}"
 pairing_token_generated=false
-if [[ -z "$pairing_token" && "$live_hardware" == true ]]; then
+if [[ -z "$pairing_token" ]]; then
     pairing_token="$("$venv_python" -c 'import secrets; print(secrets.token_urlsafe(24))')"
     pairing_token_generated=true
-fi
-if [[ -z "$pairing_token" && "$live_hardware" == false ]]; then
-    printf 'Warning: QUIETCUE_PAIRING_TOKEN is unset; use only on a trusted development network.\n' >&2
 fi
 if [[ "$bind_host" == "0.0.0.0" ]]; then
     printf 'Warning: the hub is exposed to the local network.\n' >&2
@@ -245,6 +247,15 @@ if [[ "$skip_android" == false ]] && command -v adb >/dev/null 2>&1 && adb get-s
     if adb shell pm path com.quietcue.app >/dev/null 2>&1; then
         adb shell monkey -p com.quietcue.app -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
         printf 'Android companion connected through adb reverse on port %s.\n' "$state_port"
+        if adb forward "tcp:$phone_forward_port" "tcp:8765" >/dev/null 2>&1 && \
+            adb shell am start \
+                -n com.quietcue.app/.MainActivity \
+                --es pairing_token "$pairing_token" >/dev/null 2>&1; then
+            phone_inference_endpoint="127.0.0.1:$phone_forward_port"
+            printf 'Samsung inference connected; it can be selected in System status.\n'
+        else
+            printf 'Samsung inference could not be connected; PC inference remains available.\n' >&2
+        fi
     else
         printf 'Android device found, but QuietCue is not installed; rerun with --install-android.\n'
     fi
@@ -260,6 +271,9 @@ hub_args=(
     --profile "$alert_profile"
     --pairing-token "$pairing_token"
 )
+if [[ -n "$phone_inference_endpoint" ]]; then
+    hub_args+=(--phone-endpoint "$phone_inference_endpoint")
+fi
 if [[ "$speech_disabled" -eq 0 && -n "$speech_model" ]]; then
     hub_args+=(--speech-model "$speech_model" --speech-device cpu --speech-compute-type int8)
 else
@@ -349,7 +363,10 @@ if [[ "$showcase" == true ]]; then
     "$venv_python" scripts/generate_demo_audio.py fire_alarm "$fire_wav" --duration 1
 
     printf 'Showcase: emitting a configured emergency fire-alarm event...\n'
-    "$venv_python" -m uno_q.linux.transport.hub_client "$fire_wav" --pc "127.0.0.1:$audio_port" --compact
+    "$venv_python" -m uno_q.linux.transport.hub_client "$fire_wav" \
+        --pc "127.0.0.1:$audio_port" \
+        --pairing-token "$pairing_token" \
+        --compact
     if [[ "$exit_after_showcase" == true ]]; then
         exit 0
     fi

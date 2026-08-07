@@ -4,6 +4,7 @@ import com.quietcue.app.domain.DetectedAlert
 import com.quietcue.app.domain.CapturedFingerprint
 import com.quietcue.app.domain.EnrollmentCapture
 import com.quietcue.app.domain.MemoryBank
+import com.quietcue.app.domain.InferenceDevice
 import com.quietcue.app.domain.RuntimeState
 import com.quietcue.app.domain.ProfileCatalog
 import java.net.HttpURLConnection
@@ -79,6 +80,14 @@ class AlertRepository(
         }
     }
 
+    suspend fun setInferenceDevice(device: InferenceDevice) = withContext(Dispatchers.IO) {
+        requestJson(
+            method = "POST",
+            path = "/api/inference/device",
+            document = JSONObject().put("device", device.wireValue),
+        )
+    }
+
     suspend fun captureEnrollmentSession(durationMs: Int = 10_000): EnrollmentCapture =
         withContext(Dispatchers.IO) {
             require(durationMs in 4_000..15_000)
@@ -105,11 +114,23 @@ class AlertRepository(
         val hub = json.optJSONObject("hub")
         val profile = json.optJSONObject("active_profile")
         val alertJson = json.optJSONObject("latest_alert")
+        val inference = json.optJSONObject("inference")
         return RuntimeState(
             backendConnected = json.optString("status") == "ready",
             audioSourceConnected = hub?.optBoolean("audio_source_connected") == true,
             backendProfileName = profile?.optString("name")?.takeIf(String::isNotBlank),
             latestAlert = alertJson?.let(::parseAlert),
+            requestedInferenceDevice = InferenceDevice.fromWire(
+                inference?.optString("requested_device"),
+            ),
+            activeInferenceDevice = InferenceDevice.fromWire(
+                inference?.optString("active_device"),
+            ),
+            samsungInferenceAvailable = inference?.optBoolean("samsung_available") == true,
+            inferenceSwitchPending = inference?.optBoolean("switch_pending") == true,
+            inferenceRoutingError = inference?.takeUnless { it.isNull("error") }
+                ?.optString("error")
+                ?.takeIf(String::isNotBlank),
         )
     }
 
@@ -177,7 +198,7 @@ class AlertRepository(
                 connection.outputStream.use { it.write(payload) }
             }
             check(connection.responseCode == HttpURLConnection.HTTP_OK) {
-                "Enrollment endpoint returned HTTP ${connection.responseCode}"
+                "QuietCue hub request returned HTTP ${connection.responseCode}"
             }
             return JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
         } finally {

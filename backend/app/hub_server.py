@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
+from backend.app.samsung_inference_proxy import SamsungEndpoint, SamsungInferenceProxy
 from backend.app.status_server import StatusHttpServer
 from backend.communication.stream_protocol import ProtocolError, WireMessage, read_message, write_message
 from backend.inference.custom_sound_matcher import (
@@ -20,9 +21,19 @@ from backend.inference.custom_sound_matcher import (
 )
 from backend.inference.enrollment_capture import EnrollmentCaptureController
 from backend.inference.classifier_label_matcher import ClassifierLabelMatcher
-from backend.inference.pipeline import HubInferencePipeline, HubInferenceResult, SoundClassifier
+from backend.inference.pipeline import (
+    ConfirmedEvent,
+    HubInferencePipeline,
+    HubInferenceResult,
+    SoundClassifier,
+)
 from backend.profiles.defaults import all_profiles, get_profile
-from backend.profiles.engine import DecisionResult, ProfileDecisionEngine
+from backend.profiles.engine import (
+    AlertCommand,
+    DecisionResult,
+    ProfileDecisionEngine,
+    SuppressedEvent,
+)
 from backend.profiles.wire_codec import decode_profile
 from backend.telemetry.alert_store import AlertStateStore
 
@@ -30,6 +41,8 @@ from backend.telemetry.alert_store import AlertStateStore
 LOGGER = logging.getLogger("quietcue.hub")
 DEFAULT_PORT = 8765
 DEFAULT_STATE_PORT = 8787
+COPILOT_PC = "copilot_pc"
+SAMSUNG_PHONE = "samsung_phone"
 
 
 class QuietCueHubServer:
@@ -42,6 +55,7 @@ class QuietCueHubServer:
         classifier_label_matcher: ClassifierLabelMatcher | None = None,
         pairing_token: str = "",
         enrollment_capture: EnrollmentCaptureController | None = None,
+        samsung_proxy: SamsungInferenceProxy | None = None,
     ) -> None:
         self._pipeline_factory = pipeline_factory
         self._pipeline: HubInferencePipeline | None = None
@@ -55,6 +69,31 @@ class QuietCueHubServer:
         self._pairing_token = pairing_token
         self._enrollment_capture = enrollment_capture or EnrollmentCaptureController()
         self._control_queues: dict[str, list[dict[str, object]]] = {}
+        self._samsung_proxy = samsung_proxy
+        self._requested_inference_device = COPILOT_PC
+        self._active_inference_device = COPILOT_PC
+        self._inference_error: str | None = None
+        self._samsung_retry_after = 0.0
+
+    def set_inference_device(self, device: str) -> dict[str, object]:
+        if device not in {COPILOT_PC, SAMSUNG_PHONE}:
+            raise ValueError("Inference device must be copilot_pc or samsung_phone")
+        if device == SAMSUNG_PHONE and self._samsung_proxy is None:
+            raise ValueError("Samsung inference is unavailable; connect the phone and restart the demo")
+        self._requested_inference_device = device
+        self._inference_error = None
+        self._samsung_retry_after = 0.0
+        LOGGER.info("Inference device requested: %s", device)
+        return self.inference_status()
+
+    def inference_status(self) -> dict[str, object]:
+        return {
+            "requested_device": self._requested_inference_device,
+            "active_device": self._active_inference_device,
+            "samsung_available": self._samsung_proxy is not None,
+            "switch_pending": self._requested_inference_device != self._active_inference_device,
+            "error": self._inference_error,
+        }
 
     def stop_haptic(self, event_id: str | None = None) -> dict[str, object]:
         acknowledgement = self._state_store.stop_haptic(event_id)
@@ -186,6 +225,37 @@ class QuietCueHubServer:
             raise ValueError("captured_at_ms must be a positive epoch timestamp")
         phrase_triggers = _bounded_phrase_triggers(body.get("phrase_triggers", []))
 
+        if (
+            self._requested_inference_device == SAMSUNG_PHONE
+            and self._samsung_proxy is not None
+            and time.monotonic() >= self._samsung_retry_after
+        ):
+            try:
+                remote = await self._samsung_proxy.infer(message)
+                inference = _decode_remote_inference(remote)
+                decisions = _decode_remote_decisions(remote)
+                self._enrollment_capture.observe(
+                    message.payload,
+                    sample_rate,
+                    speech_confidence=speech_confidence_from_predictions(
+                        inference.top_predictions
+                    ),
+                )
+                self._active_inference_device = SAMSUNG_PHONE
+                self._inference_error = None
+                self._state_store.record(
+                    sequence,
+                    inference,
+                    decisions,
+                    captured_at_ms=captured_at_ms,
+                )
+                return inference, decisions
+            except (OSError, ConnectionError, ProtocolError, asyncio.TimeoutError, ValueError) as exc:
+                self._active_inference_device = COPILOT_PC
+                self._inference_error = f"Samsung unavailable; using PC ({exc})"
+                self._samsung_retry_after = time.monotonic() + 5.0
+                LOGGER.warning("Samsung inference failed; falling back to PC: %s", exc)
+
         async with self._pipeline_lock:
             if self._pipeline is None:
                 self._pipeline = await asyncio.to_thread(self._pipeline_factory)
@@ -228,6 +298,7 @@ class QuietCueHubServer:
                 sample_rate,
                 speech_confidence=speech_confidence_from_predictions(inference.top_predictions),
             )
+        self._active_inference_device = COPILOT_PC
         decisions = self._decision_engine.decide(
             inference.events,
             captured_at_ms=captured_at_ms,
@@ -247,6 +318,8 @@ class QuietCueHubServer:
             pipeline, self._pipeline = self._pipeline, None
         if pipeline is not None:
             await asyncio.to_thread(pipeline.close)
+        if self._samsung_proxy is not None:
+            await self._samsung_proxy.close()
 
     async def _reset_pipeline_stream(self) -> None:
         async with self._pipeline_lock:
@@ -272,6 +345,89 @@ def _bounded_phrase_triggers(value: object) -> list[str]:
             raise ValueError("phrase triggers must be 1 to 40 characters")
         phrases.append(cleaned)
     return phrases
+
+
+def _decode_remote_inference(document: dict[str, object]) -> HubInferenceResult:
+    raw_events = document.get("events", [])
+    if not isinstance(raw_events, list):
+        raise ValueError("Samsung events must be a list")
+    events = tuple(
+        ConfirmedEvent(
+            event=str(item["event"]),
+            confidence=float(item["confidence"]),
+            source_label=str(item.get("source_label", item["event"])),
+            category=str(item["category"]),
+            pattern=str(item["pattern"]),
+            requires_ack=bool(item.get("requires_ack", False)),
+        )
+        for item in raw_events
+        if isinstance(item, dict)
+    )
+    raw_predictions = document.get("top_predictions", [])
+    if not isinstance(raw_predictions, list):
+        raise ValueError("Samsung predictions must be a list")
+    predictions = tuple(item for item in raw_predictions if isinstance(item, dict))
+    return HubInferenceResult(
+        events=events,
+        voice_detected=bool(document.get("voice_detected", False)),
+        speech_confidence=float(document.get("speech_confidence", 0.0)),
+        transcript=None,
+        speech_pending=bool(document.get("speech_pending", False)),
+        speech_inference_ms=_optional_float(document.get("speech_inference_ms")),
+        speech_error=_optional_string(document.get("speech_error")),
+        inference_ms=float(document.get("inference_ms", 0.0)),
+        total_ms=float(document.get("total_ms", 0.0)),
+        top_predictions=predictions,
+        inference_source=str(document.get("inference_source", "samsung_onnx_cpu")),
+    )
+
+
+def _decode_remote_decisions(document: dict[str, object]) -> DecisionResult:
+    raw_alerts = document.get("alerts", [])
+    raw_suppressed = document.get("suppressed", [])
+    if not isinstance(raw_alerts, list) or not isinstance(raw_suppressed, list):
+        raise ValueError("Samsung decisions must contain alert and suppressed lists")
+    alerts = tuple(
+        AlertCommand(
+            event_id=str(item["event_id"]),
+            event=str(item["event"]),
+            category=str(item["category"]),
+            confidence=float(item["confidence"]),
+            pattern=str(item["pattern"]),
+            strength=str(item["strength"]),
+            requires_ack=bool(item.get("requires_ack", False)),
+            profile_id=str(item["profile_id"]),
+            profile_name=str(item["profile_name"]),
+            source_label=str(item.get("source_label", item["event"])),
+            source_sequence=int(item["source_sequence"]),
+            captured_at_ms=int(item["captured_at_ms"]),
+            issued_at_ms=int(item["issued_at_ms"]),
+            total_after_capture_ms=int(item["total_after_capture_ms"]),
+            simulated=bool(item.get("simulated", False)),
+            fallback_to_phone=bool(item.get("fallback_to_phone", False)),
+            custom_pattern=str(item.get("custom_pattern", "")),
+        )
+        for item in raw_alerts
+        if isinstance(item, dict)
+    )
+    suppressed = tuple(
+        SuppressedEvent(
+            event=str(item["event"]),
+            confidence=float(item["confidence"]),
+            reason=str(item["reason"]),
+        )
+        for item in raw_suppressed
+        if isinstance(item, dict)
+    )
+    return DecisionResult(alerts, suppressed)
+
+
+def _optional_float(value: object) -> float | None:
+    return None if value is None else float(value)
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def _pipeline_factory(
@@ -343,6 +499,7 @@ async def serve(
     speech_device: str,
     speech_compute_type: str,
     speech_language: str,
+    phone_endpoint: str,
 ) -> None:
     profile = get_profile(profile_id)
     state_store = AlertStateStore(profile, jsonl_path=event_log)
@@ -350,6 +507,11 @@ async def serve(
     custom_matcher = CustomSoundMatcher(profile.custom_sounds)
     classifier_label_matcher = ClassifierLabelMatcher(profile.classifier_label_rules)
     enrollment_capture = EnrollmentCaptureController()
+    samsung_proxy = (
+        SamsungInferenceProxy(SamsungEndpoint.parse(phone_endpoint), pairing_token)
+        if phone_endpoint
+        else None
+    )
     hub = QuietCueHubServer(
         _pipeline_factory(
             classifier,
@@ -364,6 +526,7 @@ async def serve(
         classifier_label_matcher,
         pairing_token=pairing_token,
         enrollment_capture=enrollment_capture,
+        samsung_proxy=samsung_proxy,
     )
 
     def update_profile(document: dict[str, object]) -> dict[str, object]:
@@ -384,10 +547,16 @@ async def serve(
         )
         return {"status": "updated", "active_profile": updated.summary()}
 
+    def snapshot() -> dict[str, object]:
+        document = state_store.snapshot()
+        document["inference"] = hub.inference_status()
+        return document
+
     status = StatusHttpServer(
-        state_store.snapshot,
+        snapshot,
         update_profile=update_profile,
         stop_haptic=hub.stop_haptic,
+        update_inference_device=hub.set_inference_device,
         start_enrollment=enrollment_capture.start,
         enrollment_status=enrollment_capture.status,
         cancel_enrollment=enrollment_capture.cancel,
@@ -399,6 +568,7 @@ async def serve(
     LOGGER.info("QuietCue audio hub listening on %s", audio_addresses)
     LOGGER.info("Android state API listening on %s", state_addresses)
     LOGGER.info("Classifier=%s profile=%s", classifier, profile.name)
+    LOGGER.info("Samsung inference=%s", phone_endpoint or "not configured")
     LOGGER.info(
         "Speech model=%s device=%s compute=%s",
         speech_model or "disabled",
@@ -459,6 +629,11 @@ def _parse_args() -> argparse.Namespace:
         default=os.environ.get("QUIETCUE_PAIRING_TOKEN", ""),
         help="Shared development token; defaults to QUIETCUE_PAIRING_TOKEN",
     )
+    parser.add_argument(
+        "--phone-endpoint",
+        default=os.environ.get("QUIETCUE_PHONE_INFERENCE_ENDPOINT", ""),
+        help="Optional Samsung inference endpoint as HOST:PORT",
+    )
     return parser.parse_args()
 
 
@@ -482,6 +657,7 @@ def main() -> None:
                 args.speech_device,
                 args.speech_compute_type,
                 args.speech_language,
+                args.phone_endpoint.strip(),
             )
         )
     except KeyboardInterrupt:
