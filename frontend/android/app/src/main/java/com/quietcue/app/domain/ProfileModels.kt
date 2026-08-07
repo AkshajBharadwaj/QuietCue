@@ -97,11 +97,13 @@ data class CustomHapticPattern(
 
 data class SoundEnrollment(
     val prototype: List<Float>,
+    val prototypes: List<List<Float>> = listOf(prototype),
+    val sampleRmsDbfs: List<Float> = emptyList(),
     val similarityThreshold: Float,
     val positiveSampleCount: Int,
     val backgroundSimilarity: Float,
     val createdAtEpochMs: Long,
-    val matcherVersion: Int = 1,
+    val matcherVersion: Int = 2,
 )
 
 data class SoundDefinition(

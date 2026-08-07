@@ -48,6 +48,22 @@ class QuietCueHubServer:
             decision_engine.profile.classifier_label_rules
         )
         self._pairing_token = pairing_token
+        self._control_queues: dict[str, list[dict[str, object]]] = {}
+
+    def stop_haptic(self, event_id: str | None = None) -> dict[str, object]:
+        acknowledgement = self._state_store.stop_haptic(event_id)
+        command = {
+            "command": "stop_haptic",
+            "event_id": acknowledgement["event_id"],
+            "issued_at_ms": acknowledgement["acknowledged_at_ms"],
+        }
+        for queue in self._control_queues.values():
+            queue.append(command)
+        return {
+            "status": "stop_queued" if self._control_queues else "acknowledged_no_device",
+            "queued_devices": len(self._control_queues),
+            **acknowledgement,
+        }
 
     async def handle_client(
         self,
@@ -90,6 +106,7 @@ class QuietCueHubServer:
             )
             LOGGER.info("Uno Q %s connected from %s", device_id, peer)
             self._state_store.connected(session_id, device_id)
+            self._control_queues[session_id] = []
 
             while True:
                 message = await read_message(reader)
@@ -120,6 +137,7 @@ class QuietCueHubServer:
                             "sequence": message.body.get("sequence"),
                             **result.to_wire(),
                             **decisions.to_wire(),
+                            "control_commands": self._drain_control_commands(session_id),
                         },
                     ),
                 )
@@ -144,6 +162,7 @@ class QuietCueHubServer:
             except (ConnectionError, asyncio.IncompleteReadError):
                 pass
         finally:
+            self._control_queues.pop(session_id, None)
             self._state_store.disconnected(session_id)
             writer.close()
             await writer.wait_closed()
@@ -223,6 +242,12 @@ class QuietCueHubServer:
         async with self._pipeline_lock:
             if self._pipeline is not None:
                 self._pipeline.reset_stream()
+
+    def _drain_control_commands(self, session_id: str) -> list[dict[str, object]]:
+        queue = self._control_queues.get(session_id, [])
+        commands = list(queue)
+        queue.clear()
+        return commands
 
 
 def _pipeline_factory(
@@ -336,6 +361,7 @@ async def serve(
     status = StatusHttpServer(
         state_store.snapshot,
         update_profile=update_profile,
+        stop_haptic=hub.stop_haptic,
     )
     audio_server = await asyncio.start_server(hub.handle_client, host, port)
     state_server = await asyncio.start_server(status.handle_client, state_host, state_port)

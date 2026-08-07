@@ -173,6 +173,28 @@ class AlertDispatcherTest(unittest.TestCase):
         self.assertEqual(self.dispatcher.handle_detection_result({}), [])
         self.assertEqual(self.dispatcher.handle_detection_result({"alerts": "nope"}), [])
 
+    def test_remote_stop_control_stops_pending_pattern_after_dispatch(self) -> None:
+        outcomes = self.dispatcher.handle_detection_result(
+            {
+                "alerts": [
+                    _alert(
+                        event="fire_alarm",
+                        category="emergency",
+                        pattern="urgent_repeat",
+                        requires_ack=True,
+                    )
+                ],
+                "control_commands": [{"command": "stop_haptic"}],
+            }
+        )
+
+        self.assertTrue(outcomes[0].delivered)
+        self.assertEqual(
+            self.transport.calls[-2:],
+            [("stop_haptic",), ("set_status_led", False)],
+        )
+        self.assertIsNone(self.dispatcher.health_snapshot()["pending_ack_event"])
+
     def test_acknowledge_button_stops_a_pending_pattern(self) -> None:
         self.dispatcher.dispatch(
             _alert(event="fire_alarm", category="emergency", pattern="urgent_repeat", requires_ack=True)

@@ -50,6 +50,7 @@ fun DashboardScreen(
     onAcceptSmartSuggestion: () -> Unit,
     onAlwaysSmartSuggestion: () -> Unit,
     onDismissSmartSuggestion: () -> Unit,
+    onStopHaptic: (String) -> Unit,
 ) {
     val profile = catalog.activeProfile
     LazyColumn(
@@ -237,6 +238,20 @@ fun DashboardScreen(
                                     },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (alert.hapticActive) {
+                                Spacer(Modifier.height(8.dp))
+                                Button(
+                                    onClick = { onStopHaptic(alert.eventId) },
+                                    enabled = !runtimeState.stopInProgress && runtimeState.backendConnected,
+                                ) {
+                                    Text(if (runtimeState.stopInProgress) "Stopping…" else "Stop vibration")
+                                }
+                            } else if (alert.acknowledgedAtMs != null) {
+                                Text(
+                                    "Vibration stopped",
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                         }
                     }
                 }

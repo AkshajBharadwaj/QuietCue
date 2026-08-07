@@ -227,6 +227,7 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                 onAcceptSmartSuggestion = { viewModel.acceptSmartProfileSuggestion(always = false) },
                 onAlwaysSmartSuggestion = { viewModel.acceptSmartProfileSuggestion(always = true) },
                 onDismissSmartSuggestion = viewModel::dismissSmartProfileSuggestion,
+                onStopHaptic = viewModel::stopHaptic,
             )
             MainTab.PROFILES -> ProfilesScreen(
                 catalog = catalog,

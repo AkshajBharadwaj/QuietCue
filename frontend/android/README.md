@@ -20,12 +20,15 @@ deliver to the STM32 haptic firmware.
 - Optional activity and location labels for future automatic profile activation.
 - Built-in profile reset and custom profile deletion.
 - Local validation and unit tests for defaults, times, and persistence encoding.
-- Read-only local hub status, latest event, confidence, latency, backend profile,
-  and hardware-confirmed haptic output on the dashboard when a Uno Q is connected.
+- Local hub status, latest event, confidence, latency, backend profile,
+  hardware-confirmed haptic output, and a Stop vibration control on the dashboard.
+- System notifications for newly detected alerts while the app is running and
+  notification permission is granted.
 - A constrained local profile assistant that turns a situation description into
   a complete draft for explicit user review.
-- Custom sound enrollment using three two-second examples, one background sample,
-  and an acoustic fingerprint that discards raw audio immediately.
+- Custom sound enrollment using 3–30 retained two-second fingerprints (6–10
+  varied examples recommended), background and optional confusing-sound
+  calibration, and a pre-save recognition test. Raw audio is discarded immediately.
 - Active-profile and enrolled-fingerprint synchronization to the local hub.
 - A foreground TCP inference service on port `8765` using the checked-in quantized
   W8A8 YAMNet ONNX model and ONNX Runtime for Android.

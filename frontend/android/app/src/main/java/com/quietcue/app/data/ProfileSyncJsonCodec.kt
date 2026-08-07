@@ -69,6 +69,7 @@ object ProfileSyncJsonCodec {
                                 .put("event", sound.id)
                                 .put("label", sound.displayName)
                                 .put("prototype", JSONArray(enrollment.prototype))
+                                .put("prototypes", JSONArray(enrollment.prototypes.map { JSONArray(it) }))
                                 .put("similarity_threshold", enrollment.similarityThreshold.toDouble())
                                 .put("matcher_version", enrollment.matcherVersion),
                         )

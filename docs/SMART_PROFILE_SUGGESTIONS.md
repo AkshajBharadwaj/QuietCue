@@ -7,7 +7,8 @@ coordinates to the PC hub, Uno Q, or a cloud service.
 ## Product behavior
 
 1. Open **Places** and choose **Save my current place**.
-2. Name the place, select its profile, and choose a 100–500 metre boundary.
+2. Name the place, select its profile, and choose a 15–500 metre boundary. New
+   places default to 15 metres for room-scale demos.
 3. Grant precise location to capture the boundary. Grant **Allow all the time**
    if suggestions should arrive while QuietCue is not visible.
 4. On arrival, QuietCue initially asks whether to switch profiles.
@@ -33,6 +34,9 @@ geofence monitoring. On recent Android versions, the user grants background
 access from the app's system settings after seeing QuietCue's explanation.
 Geofence events can be delayed by the operating system, so this feature must not
 control emergency-event detection or other time-critical safety behavior.
+The 15-metre option is intentionally available for demonstrations; normal phone
+location accuracy may not reliably distinguish adjacent rooms. Use the built-in
+simulator when a deterministic transition is required.
 
 References: [Android geofencing guide](https://developer.android.com/develop/sensors-and-location/location/geofencing),
 [background location guidance](https://developer.android.com/develop/sensors-and-location/location/permissions/background).

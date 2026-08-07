@@ -26,7 +26,8 @@ class AlertRepositoryTest {
                     "total_after_capture_ms": 41,
                     "requires_ack": true,
                     "simulated": true,
-                    "fallback_to_phone": true
+                    "fallback_to_phone": true,
+                    "haptic_active": true
                   }
                 }
                 """.trimIndent(),
@@ -39,5 +40,6 @@ class AlertRepositoryTest {
         assertEquals("Fire Alarm", state.latestAlert?.displayName)
         assertEquals(41, state.latestAlert?.totalLatencyMs)
         assertTrue(state.latestAlert?.fallbackToPhone == true)
+        assertTrue(state.latestAlert?.hapticActive == true)
     }
 }

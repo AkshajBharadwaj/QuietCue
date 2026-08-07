@@ -12,6 +12,8 @@ data class DetectedAlert(
     val requiresAcknowledgement: Boolean,
     val simulated: Boolean,
     val fallbackToPhone: Boolean,
+    val hapticActive: Boolean = false,
+    val acknowledgedAtMs: Long? = null,
 ) {
     val displayName: String
         get() = if (event.startsWith("custom:") && sourceLabel.startsWith("enrolled: ")) {
@@ -27,4 +29,5 @@ data class RuntimeState(
     val backendProfileName: String? = null,
     val latestAlert: DetectedAlert? = null,
     val errorMessage: String? = null,
+    val stopInProgress: Boolean = false,
 )

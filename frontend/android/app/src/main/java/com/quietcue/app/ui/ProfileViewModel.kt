@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quietcue.app.data.AlertRepository
+import com.quietcue.app.data.AlertNotificationManager
+import com.quietcue.app.data.AlertNotificationTracker
 import com.quietcue.app.data.MemoryRepository
 import com.quietcue.app.data.OnDeviceNameRecognizer
 import com.quietcue.app.data.ProfileRepository
@@ -39,6 +41,7 @@ import kotlinx.coroutines.launch
 class ProfileViewModel(
     private val repository: ProfileRepository,
     private val alertRepository: AlertRepository,
+    private val notificationManager: AlertNotificationManager,
     private val enrollmentRecorder: PhoneEnrollmentRecorder,
     private val memoryRepository: MemoryRepository,
     private val nameRecognizer: OnDeviceNameRecognizer,
@@ -47,6 +50,8 @@ class ProfileViewModel(
     private val geofenceManager: SmartPlaceGeofenceManager,
     private val locationClient: SmartPlaceLocationClient,
 ) : ViewModel() {
+    private val notificationTracker = AlertNotificationTracker()
+
     val catalog: StateFlow<ProfileCatalog> = repository.catalog.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -82,6 +87,7 @@ class ProfileViewModel(
                 runCatching { alertRepository.fetchState() }
                     .onSuccess { state ->
                         _runtimeState.value = state
+                        notificationTracker.consumeIfNew(state.latestAlert)?.let(notificationManager::notify)
                         val currentCatalog = catalog.value
                         val currentMemoryBank = memoryBank.value
                         val payload = runCatching {
@@ -198,7 +204,7 @@ class ProfileViewModel(
                         name = "Hackathon venue",
                         latitude = 0.0,
                         longitude = 0.0,
-                        radiusMeters = 150f,
+                        radiusMeters = 15f,
                         profileId = target.id,
                         demoOnly = true,
                     ),
@@ -286,6 +292,23 @@ class ProfileViewModel(
         _message.value = null
     }
 
+    fun stopHaptic(eventId: String) {
+        if (_runtimeState.value.stopInProgress) return
+        _runtimeState.value = _runtimeState.value.copy(stopInProgress = true)
+        viewModelScope.launch {
+            runCatching { alertRepository.stopHaptic(eventId) }
+                .onSuccess {
+                    _runtimeState.value = runCatching { alertRepository.fetchState() }
+                        .getOrElse { _runtimeState.value.copy(stopInProgress = false) }
+                    _message.value = "Vibration stopped"
+                }
+                .onFailure {
+                    _runtimeState.value = _runtimeState.value.copy(stopInProgress = false)
+                    _message.value = it.message ?: "Could not stop vibration"
+                }
+        }
+    }
+
     private fun runAction(successMessage: String, action: suspend () -> Unit) {
         viewModelScope.launch {
             runCatching { action() }
@@ -310,6 +333,7 @@ class ProfileViewModel(
                 return ProfileViewModel(
                     profileRepository,
                     AlertRepository(),
+                    AlertNotificationManager(context.applicationContext),
                     PhoneEnrollmentRecorder(),
                     MemoryRepository(context.applicationContext),
                     OnDeviceNameRecognizer(context.applicationContext),

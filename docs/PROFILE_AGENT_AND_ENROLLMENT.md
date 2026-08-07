@@ -25,14 +25,19 @@ From the Profiles tab, choose **Enroll a sound**:
 
 1. Name and describe the sound.
 2. Choose informational, attention, or emergency urgency.
-3. Record three two-second examples from a realistic distance.
-4. Record the room without the target sound.
-5. QuietCue checks volume, example consistency, and background separation.
-6. Review the resulting sound rule in the active profile.
+3. Record at least three two-second examples. Six to ten examples varied by
+   distance, angle, and normal room noise are recommended; enrollment retains up
+   to 30 examples.
+4. Record the room without the target sound and optionally add up to ten similar
+   sounds that should not trigger the alert.
+5. Remove weak or duplicate examples and run the pre-save recognition test.
+6. QuietCue checks volume and rejects enrollment when a negative example cannot
+   be safely separated from the target examples.
+7. Review the resulting sound rule in the active profile.
 
 The phone records 16 kHz mono PCM only for the duration of each explicit capture.
 It extracts an eight-component normalized spectral fingerprint in memory and then
-discards the PCM. The saved catalog contains the fingerprint, calibrated threshold,
+discards the PCM. The saved catalog contains the retained fingerprints, calibrated threshold,
 sample count, matcher version, and event metadata—never raw audio.
 
 The active Android profile synchronizes to the local hub over the development

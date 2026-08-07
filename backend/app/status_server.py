@@ -13,9 +13,11 @@ class StatusHttpServer:
         self,
         snapshot: Callable[[], dict[str, Any]],
         update_profile: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        stop_haptic: Callable[[str | None], dict[str, Any]] | None = None,
     ) -> None:
         self._snapshot = snapshot
         self._update_profile = update_profile
+        self._stop_haptic = stop_haptic
 
     async def handle_client(
         self,
@@ -41,7 +43,22 @@ class StatusHttpServer:
                 if not isinstance(document, dict):
                     raise ValueError("Profile document must be an object")
                 await self._respond(writer, 200, self._update_profile(document))
-            elif method not in {"GET", "PUT"}:
+            elif method == "POST" and path == "/api/haptics/stop" and self._stop_haptic is not None:
+                content_length = _content_length(header_lines[1:])
+                if content_length > 16 * 1024:
+                    raise ValueError("Stop command has an invalid size")
+                document: dict[str, Any] = {}
+                if content_length:
+                    body = await reader.readexactly(content_length)
+                    decoded = json.loads(body)
+                    if not isinstance(decoded, dict):
+                        raise ValueError("Stop command must be an object")
+                    document = decoded
+                event_id = document.get("event_id")
+                if event_id is not None and not isinstance(event_id, str):
+                    raise ValueError("event_id must be a string")
+                await self._respond(writer, 200, self._stop_haptic(event_id))
+            elif method not in {"GET", "PUT", "POST"}:
                 await self._respond(writer, 405, {"error": "method_not_allowed"})
             else:
                 await self._respond(writer, 404, {"error": "not_found"})
