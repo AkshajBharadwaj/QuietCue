@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 
 from backend.inference.pipeline import ConfirmedEvent
-from backend.profiles.speech_context import SpeechContext
+from backend.profiles.speech_context import SpeechContext, SpeechMode
 
 
 @dataclass(frozen=True)
@@ -55,12 +55,18 @@ class AlertProfile:
     custom_sounds: tuple[CustomSoundPrototype, ...] = ()
     classifier_label_rules: tuple[ClassifierLabelRule, ...] = ()
     speech_context: SpeechContext = SpeechContext()
+    speech_mode: SpeechMode = SpeechMode.INHERIT
 
     def rule_for(self, event: str) -> SoundRule | None:
         return next((rule for rule in self.sound_rules if rule.event == event), None)
 
     def summary(self) -> dict[str, object]:
         return {"id": self.profile_id, "name": self.name}
+
+    def speech_enabled(self) -> bool:
+        return self.speech_mode is SpeechMode.ALWAYS_ON or (
+            self.speech_mode is SpeechMode.INHERIT and self.speech_context.settings.enabled
+        )
 
 
 @dataclass(frozen=True)

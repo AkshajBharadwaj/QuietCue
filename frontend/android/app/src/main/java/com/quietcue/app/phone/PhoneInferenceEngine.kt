@@ -3,6 +3,9 @@ package com.quietcue.app.phone
 import com.quietcue.app.domain.AlertPriority
 import com.quietcue.app.domain.AlertProfile
 import com.quietcue.app.domain.SoundRule
+import com.quietcue.app.domain.MemoryBank
+import com.quietcue.app.domain.ProfileDefaults
+import com.quietcue.app.phone.speech.SpeechGate
 import java.time.ZonedDateTime
 import java.util.UUID
 import kotlin.math.round
@@ -24,39 +27,77 @@ data class PhoneInferenceResult(
     val speechConfidence: Double = 0.0,
     val inferenceMs: Double = 0.0,
     val pending: Boolean = false,
+    val speechPending: Boolean = false,
+    val speechListening: Boolean = false,
+    val speechModelLoaded: Boolean = false,
+    val speechInferenceMs: Double? = null,
+    val speechError: String? = null,
 )
 
-class PhoneInferenceEngine(private val classifier: PhoneSoundClassifier) {
+class PhoneInferenceEngine(
+    private val classifier: PhoneSoundClassifier,
+    private val profileProvider: () -> AlertProfile = { ProfileDefaults.all().first() },
+    private val memoryBankProvider: () -> MemoryBank = { MemoryBank() },
+    private val speechGate: SpeechGate? = null,
+) {
     private var bufferedPcm = byteArrayOf()
 
     @Synchronized
-    fun process(pcm: ByteArray): PhoneInferenceResult {
+    fun process(
+        pcm: ByteArray,
+        edgeVoiceDetected: Boolean = false,
+        additionalPhrases: List<String> = emptyList(),
+    ): PhoneInferenceResult {
         require(pcm.isNotEmpty() && pcm.size % 2 == 0) { "PCM16 must contain complete samples" }
         bufferedPcm += pcm
-        if (bufferedPcm.size < YamnetFeatureExtractor.WINDOW_BYTES) {
-            return PhoneInferenceResult(pending = true)
+        val environmentalPending = bufferedPcm.size < YamnetFeatureExtractor.WINDOW_BYTES
+        val predictions: List<PhoneSoundPrediction>
+        val inferenceMs: Double
+        val mapping: Pair<List<PhoneMappedEvent>, Double>
+        if (environmentalPending) {
+            predictions = emptyList()
+            inferenceMs = 0.0
+            mapping = emptyList<PhoneMappedEvent>() to 0.0
+        } else {
+            val window = bufferedPcm.copyOfRange(0, YamnetFeatureExtractor.WINDOW_BYTES)
+            bufferedPcm = bufferedPcm.copyOfRange(
+                minOf(YamnetFeatureExtractor.HOP_BYTES, bufferedPcm.size),
+                bufferedPcm.size,
+            )
+            val started = System.nanoTime()
+            predictions = classifier.classify(window, topK = 10)
+            inferenceMs = (System.nanoTime() - started) / 1_000_000.0
+            mapping = mapPredictions(predictions)
         }
-        val window = bufferedPcm.copyOfRange(0, YamnetFeatureExtractor.WINDOW_BYTES)
-        bufferedPcm = bufferedPcm.copyOfRange(
-            minOf(YamnetFeatureExtractor.HOP_BYTES, bufferedPcm.size),
-            bufferedPcm.size,
+        val speech = speechGate?.update(
+            pcm = pcm,
+            speechConfidence = mapping.second,
+            edgeVoiceDetected = edgeVoiceDetected,
+            bank = memoryBankProvider(),
+            profile = profileProvider(),
+            additionalPhrases = additionalPhrases,
         )
-        val started = System.nanoTime()
-        val predictions = classifier.classify(window, topK = 10)
-        val inferenceMs = (System.nanoTime() - started) / 1_000_000.0
-        val mapping = mapPredictions(predictions)
         return PhoneInferenceResult(
-            events = mapping.first,
+            events = mapping.first + listOfNotNull(speech?.event),
             predictions = predictions.take(5),
             speechConfidence = mapping.second,
             inferenceMs = round(inferenceMs * 100.0) / 100.0,
+            pending = environmentalPending,
+            speechPending = speech?.pending == true,
+            speechListening = speech?.listening == true,
+            speechModelLoaded = speech?.modelLoaded == true,
+            speechInferenceMs = speech?.inferenceMs,
+            speechError = speech?.error,
         )
     }
 
     @Synchronized
     fun reset() {
         bufferedPcm = byteArrayOf()
+        speechGate?.reset()
     }
+
+    fun close() = speechGate?.close()
 
     private fun mapPredictions(
         predictions: List<PhoneSoundPrediction>,

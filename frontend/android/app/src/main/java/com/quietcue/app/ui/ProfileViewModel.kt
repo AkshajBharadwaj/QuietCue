@@ -22,6 +22,7 @@ import com.quietcue.app.domain.RuntimeState
 import com.quietcue.app.domain.CapturedFingerprint
 import com.quietcue.app.domain.SoundDefinition
 import com.quietcue.app.domain.SoundDiscoveryCandidate
+import com.quietcue.app.domain.SpeechSettings
 import com.quietcue.app.domain.PlaceTransition
 import com.quietcue.app.domain.SmartPlace
 import com.quietcue.app.domain.SmartProfileState
@@ -176,6 +177,10 @@ class ProfileViewModel(
     }
 
     fun clearMemoryBank() = runAction("Private memory bank deleted") { memoryRepository.clearAll() }
+
+    fun saveSpeechSettings(settings: SpeechSettings) = runAction("Speech settings saved") {
+        memoryRepository.saveSpeechSettings(settings)
+    }
 
     fun addCurrentSmartPlace(
         name: String,

@@ -160,29 +160,27 @@ class QuietCueHubServer:
             raise ValueError("sequence must be a non-negative integer")
         if captured_at_ms <= 0:
             raise ValueError("captured_at_ms must be a positive epoch timestamp")
-        phrase_triggers = body.get("phrase_triggers", [])
-        if not isinstance(phrase_triggers, list) or not all(
-            isinstance(phrase, str) for phrase in phrase_triggers
-        ):
-            raise ValueError("phrase_triggers must be a list of strings")
+        phrase_triggers = _bounded_phrase_triggers(body.get("phrase_triggers", []))
 
         async with self._pipeline_lock:
             if self._pipeline is None:
                 self._pipeline = await asyncio.to_thread(self._pipeline_factory)
             profile = self._decision_engine.profile
             speech_context = profile.speech_context
+            resolved_phrases = speech_context.trigger_phrases(
+                profile.phrase_triggers,
+                phrase_triggers,
+            )
             inference = await asyncio.to_thread(
                 self._pipeline.process_pcm16,
                 message.payload,
                 sample_rate,
                 body.get("edge_analysis") if isinstance(body.get("edge_analysis"), dict) else None,
-                list(
-                    dict.fromkeys(
-                        [*profile.phrase_triggers, *speech_context.identity_triggers(), *phrase_triggers]
-                    )
-                ),
+                list(resolved_phrases),
                 speech_context.prompt(),
                 list(speech_context.hotwords()),
+                profile.speech_enabled(),
+                speech_context.settings.sensitivity,
             )
             custom_events = await asyncio.to_thread(
                 self._custom_matcher.match_pcm16,
@@ -224,6 +222,20 @@ class QuietCueHubServer:
         async with self._pipeline_lock:
             if self._pipeline is not None:
                 self._pipeline.reset_stream()
+
+
+def _bounded_phrase_triggers(value: object) -> list[str]:
+    if not isinstance(value, list) or len(value) > 20:
+        raise ValueError("phrase_triggers must be a list of at most 20 strings")
+    phrases: list[str] = []
+    for phrase in value:
+        if not isinstance(phrase, str):
+            raise ValueError("phrase_triggers must contain only strings")
+        cleaned = phrase.strip()
+        if not cleaned or len(cleaned) > 40:
+            raise ValueError("phrase triggers must be 1 to 40 characters")
+        phrases.append(cleaned)
+    return phrases
 
 
 def _pipeline_factory(
@@ -378,8 +390,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--profile", choices=tuple(all_profiles()), default="home")
     parser.add_argument(
         "--speech-model",
-        default=os.environ.get("QUIETCUE_SPEECH_MODEL", ""),
-        help="Optional local Faster-Whisper model name/path, for example tiny.en",
+        default=os.environ.get("QUIETCUE_SPEECH_MODEL", "base.en"),
+        help="Local Faster-Whisper model name/path (default: base.en)",
+    )
+    parser.add_argument(
+        "--no-speech",
+        action="store_true",
+        help="Disable speech transcription even when the active profile enables it",
     )
     parser.add_argument(
         "--speech-device",
@@ -432,7 +449,7 @@ def main() -> None:
                 args.profile,
                 args.event_log,
                 args.discovery_state,
-                args.speech_model.strip(),
+                "" if args.no_speech else args.speech_model.strip(),
                 args.speech_device,
                 args.speech_compute_type,
                 args.speech_language,

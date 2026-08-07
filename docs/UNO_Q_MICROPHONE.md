@@ -99,14 +99,15 @@ python3 -m uno_q.linux.transport.hub_client \
 ```
 
 Automatic routing prefers a reachable computer and can fail over to a
-protocol-compatible `--phone` endpoint. The current Samsung companion app edits
-profiles and displays hub state but does not yet host the audio inference
-server; that service remains a future Android implementation.
+protocol-compatible `--phone` endpoint. The Samsung companion hosts that audio
+inference server with quantized YAMNet and an optional, lazy Whisper ONNX speech
+worker.
 
 ## Speech behavior
 
-Voice-activity metadata from the board gates the connected Faster-Whisper path.
-The hub buffers short speech windows in memory, performs transcription without
-blocking environmental classification, matches configured phrases, applies the
-active profile, and returns any resulting haptic command. Production builds
-must not log or persist transcripts without explicit consent.
+Voice-activity metadata from the board and the hub's YAMNet speech-family score
+gate the connected speech path. The computer uses Faster-Whisper; the Samsung
+hub uses staged Whisper ONNX assets. Both buffer at most four seconds in memory,
+transcribe on a worker that cannot block environmental classification, fuzzy-
+match configured phrases, apply the active profile, and return any resulting
+haptic command. Runtime responses and telemetry never include transcript text.

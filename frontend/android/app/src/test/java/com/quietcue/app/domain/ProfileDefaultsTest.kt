@@ -39,4 +39,14 @@ class ProfileDefaultsTest {
         assertFalse(duplicate.isBuiltIn)
         assertTrue(duplicate.name.endsWith(" copy"))
     }
+
+    @Test
+    fun `speech defaults match the intended contexts`() {
+        val work = ProfileDefaults.forBuiltIn(BuiltInProfile.WORK_SCHOOL)
+        val sleep = ProfileDefaults.forBuiltIn(BuiltInProfile.SLEEP_NIGHT)
+
+        assertEquals(SpeechMode.ALWAYS_ON, work.speechMode)
+        assertTrue("front desk" in work.phraseTriggers)
+        assertEquals(SpeechMode.OFF, sleep.speechMode)
+    }
 }

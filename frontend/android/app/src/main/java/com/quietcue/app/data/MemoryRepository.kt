@@ -10,6 +10,7 @@ import com.quietcue.app.domain.ContextMemory
 import com.quietcue.app.domain.MemoryBank
 import com.quietcue.app.domain.MemoryBankValidator
 import com.quietcue.app.domain.PersonMemory
+import com.quietcue.app.domain.SpeechSettings
 import com.quietcue.app.domain.UserIdentity
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -57,6 +58,15 @@ class MemoryRepository(private val context: Context) {
 
     suspend fun deleteContext(contextId: String) = update { bank ->
         bank.copy(contexts = bank.contexts.filterNot { it.id == contextId })
+    }
+
+    suspend fun saveSpeechSettings(settings: SpeechSettings) = update { bank ->
+        bank.copy(
+            speechSettings = settings.copy(
+                sensitivity = settings.sensitivity.coerceIn(0.4f, 0.95f),
+                globalPhrases = settings.globalPhrases.cleanedText(),
+            ),
+        )
     }
 
     suspend fun clearAll() {

@@ -11,6 +11,9 @@ import com.quietcue.app.domain.HapticStrength
 import com.quietcue.app.domain.SoundDefinition
 import com.quietcue.app.domain.SoundLibrary
 import com.quietcue.app.domain.UserIdentity
+import com.quietcue.app.domain.SpeechMode
+import com.quietcue.app.domain.SpeechModel
+import com.quietcue.app.domain.SpeechSettings
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -26,6 +29,12 @@ class ProfileSyncJsonCodecTest {
             identity = UserIdentity("Akshaj", "Ak-shudge", listOf("Ak"), listOf("Hey oxides"), 1),
             people = listOf(PersonMemory("p1", "Maya", "Sister", updatedAtEpochMs = 2)),
             contexts = listOf(ContextMemory("c1", "Tuesday class", "Building 4", 3)),
+            speechSettings = SpeechSettings(
+                model = SpeechModel.BASE_EN,
+                sensitivity = 0.72f,
+                listenForPeople = true,
+                globalPhrases = listOf("front desk"),
+            ),
         )
 
         val context = JSONObject(ProfileSyncJsonCodec.encode(catalog, bank)).getJSONObject("speech_context")
@@ -33,11 +42,24 @@ class ProfileSyncJsonCodecTest {
         assertEquals("Akshaj", context.getJSONObject("identity").getString("name"))
         assertEquals("Maya", context.getJSONArray("people").getJSONObject(0).getString("name"))
         assertEquals("Building 4", context.getJSONArray("contexts").getJSONObject(0).getString("details"))
+        val settings = context.getJSONObject("settings")
+        assertEquals("base_en", settings.getString("model"))
+        assertEquals(0.72, settings.getDouble("sensitivity"), 0.0001)
+        assertTrue(settings.getBoolean("listen_for_people"))
+        assertEquals("inherit", JSONObject(ProfileSyncJsonCodec.encode(catalog, bank)).getString("speech_mode"))
         assertFalse(context.has("suggestions"))
         val emptyContext = JSONObject(ProfileSyncJsonCodec.encode(catalog)).getJSONObject("speech_context")
         assertFalse(emptyContext.has("identity"))
         assertEquals(0, emptyContext.getJSONArray("people").length())
         assertEquals(0, emptyContext.getJSONArray("contexts").length())
+    }
+
+    @Test
+    fun `sync includes per-profile speech override`() {
+        val profile = ProfileDefaults.all().first().copy(speechMode = SpeechMode.OFF)
+        val document = JSONObject(ProfileSyncJsonCodec.encode(ProfileCatalog(listOf(profile), profile.id)))
+
+        assertEquals("off", document.getString("speech_mode"))
     }
 
     @Test

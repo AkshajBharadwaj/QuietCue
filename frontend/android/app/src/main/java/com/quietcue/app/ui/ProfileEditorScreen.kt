@@ -68,6 +68,7 @@ import com.quietcue.app.domain.ProfileValidator
 import com.quietcue.app.domain.QuietHours
 import com.quietcue.app.domain.SoundRule
 import com.quietcue.app.domain.SoundDefinition
+import com.quietcue.app.domain.SpeechMode
 import com.quietcue.app.domain.formatTime
 import com.quietcue.app.domain.parseTime
 import kotlin.math.roundToInt
@@ -284,6 +285,13 @@ fun ProfileEditorScreen(
 
             item {
                 EditorSection(title = "Name and phrase detection", icon = Icons.Rounded.RecordVoiceOver) {
+                    Text("Speech processing", style = MaterialTheme.typography.labelLarge)
+                    OptionChips(
+                        options = SpeechMode.entries,
+                        selected = draft.speechMode,
+                        label = SpeechMode::displayName,
+                        onSelected = { updateDraft(draft.copy(speechMode = it)) },
+                    )
                     OutlinedTextField(
                         value = draft.phraseTriggers.joinToString(", "),
                         onValueChange = { value ->

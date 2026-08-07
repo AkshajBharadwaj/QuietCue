@@ -212,6 +212,20 @@ fun DashboardScreen(
                     runtimeState.backendConnected,
                 )
                 StatusRow(
+                    Icons.Rounded.GraphicEq,
+                    "Speech and name detection",
+                    when {
+                        phoneInferenceState.speechError != null -> phoneInferenceState.speechError
+                        phoneInferenceState.speechPending -> "Transcribing locally…"
+                        phoneInferenceState.speechListening -> "Listening for configured phrases"
+                        phoneInferenceState.speechModelLoaded -> {
+                            "Model ready" + (phoneInferenceState.speechInferenceMs?.let { " • last decode ${it.toInt()} ms" } ?: "")
+                        }
+                        else -> "Loads only when an enabled profile hears speech"
+                    },
+                    phoneInferenceState.speechModelLoaded && phoneInferenceState.speechError == null,
+                )
+                StatusRow(
                     Icons.Rounded.Watch,
                     "Audio source",
                     if (phoneInferenceState.clientConnected) {

@@ -12,6 +12,11 @@ data class PhoneInferenceServerState(
     val provider: String = "loading",
     val lastEvent: String? = null,
     val inferenceMs: Double? = null,
+    val speechModelLoaded: Boolean = false,
+    val speechListening: Boolean = false,
+    val speechPending: Boolean = false,
+    val speechInferenceMs: Double? = null,
+    val speechError: String? = null,
     val error: String? = null,
 )
 

@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import re
 import math
+import logging
 import threading
 import time
 import unicodedata
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Protocol
+
+
+LOGGER = logging.getLogger("quietcue.speech")
 
 
 class SpeechTranscriber(Protocol):
@@ -127,29 +131,44 @@ class FasterWhisperTranscriber:
             return self._model
 
 
-def find_phrase_match(transcript: Transcript, phrases: list[str]) -> PhraseMatch | None:
-    """Match normalized whole-word phrases, preferring the longest match."""
+def find_phrase_match(
+    transcript: Transcript,
+    phrases: list[str],
+    sensitivity: float = 0.6,
+) -> PhraseMatch | None:
+    """Fuzzily match bounded token windows without exposing transcript text."""
+    if not 0.0 <= sensitivity <= 1.0:
+        raise ValueError("Speech sensitivity must be between zero and one")
     normalized_transcript = _normalize(transcript.text)
+    transcript_tokens = normalized_transcript.split()
     candidates = sorted(
         ((_normalize(phrase), phrase.strip()) for phrase in phrases if phrase.strip()),
         key=lambda pair: len(pair[0]),
         reverse=True,
     )
+    best: tuple[float, int, str] | None = None
     for normalized_phrase, original_phrase in candidates:
         if not normalized_phrase:
             continue
-        pattern = rf"(?:^|\s){re.escape(normalized_phrase)}(?:$|\s)"
-        if re.search(pattern, normalized_transcript):
-            return PhraseMatch(
-                phrase=original_phrase,
-                transcript=transcript.text,
-                # Segment-level Whisper log probability is not a calibrated
-                # probability for the matched words. Exact normalized phrase
-                # presence is therefore assigned the existing attention-event
-                # baseline while still preserving stronger ASR confidence.
-                confidence=max(0.75, transcript.confidence or 0.0),
-            )
-    return None
+        phrase_tokens = normalized_phrase.split()
+        for window_size in range(max(1, len(phrase_tokens) - 1), len(phrase_tokens) + 2):
+            for start in range(0, len(transcript_tokens) - window_size + 1):
+                window = " ".join(transcript_tokens[start : start + window_size])
+                score = _phrase_similarity(normalized_phrase, window)
+                candidate = (score, len(normalized_phrase), original_phrase)
+                if best is None or candidate[:2] > best[:2]:
+                    best = candidate
+    if best is None or best[0] < sensitivity:
+        if best is not None and best[0] >= max(0.0, sensitivity - 0.15):
+            LOGGER.debug("Rejected near-match for configured phrase %r at %.3f", best[2], best[0])
+        return None
+    asr_confidence = transcript.confidence if transcript.confidence is not None else 1.0
+    confidence = max(0.0, min(1.0, best[0] * asr_confidence))
+    return PhraseMatch(
+        phrase=best[2],
+        transcript=transcript.text,
+        confidence=round(confidence, 4),
+    )
 
 
 @dataclass(frozen=True)
@@ -203,6 +222,7 @@ class BufferedSpeechRecognizer:
         phrase_triggers: list[str],
         prompt: str = "",
         hotwords: list[str] | None = None,
+        sensitivity: float = 0.6,
     ) -> tuple[SpeechRecognition | None, bool]:
         if sample_rate != 16_000:
             raise ValueError("Speech buffering currently requires 16 kHz audio")
@@ -220,7 +240,7 @@ class BufferedSpeechRecognizer:
             utterance_ended and duration_ms >= self.end_of_utterance_ms
         )
         if self._future is None and should_submit and phrase_triggers:
-            self._submit(sample_rate, phrase_triggers, prompt, hotwords or [])
+            self._submit(sample_rate, phrase_triggers, prompt, hotwords or [], sensitivity)
         elif utterance_ended and duration_ms < self.end_of_utterance_ms:
             self._buffer.clear()
         self._was_voice = voice_detected
@@ -245,6 +265,7 @@ class BufferedSpeechRecognizer:
         phrase_triggers: list[str],
         prompt: str,
         hotwords: list[str],
+        sensitivity: float,
     ) -> None:
         audio = bytes(self._buffer)
         overlap_bytes = _bytes_for_ms(sample_rate, self.overlap_ms)
@@ -257,6 +278,7 @@ class BufferedSpeechRecognizer:
             list(phrase_triggers),
             prompt,
             list(hotwords),
+            sensitivity,
         )
 
     def _take_completed(self) -> SpeechRecognition | None:
@@ -282,11 +304,14 @@ def _recognize(
     phrase_triggers: list[str],
     prompt: str,
     hotwords: list[str],
+    sensitivity: float,
 ) -> SpeechRecognition:
     started = time.perf_counter()
     transcript = transcriber.transcribe_pcm16(pcm, sample_rate, prompt, hotwords)
     inference_ms = (time.perf_counter() - started) * 1_000
-    phrase_match = find_phrase_match(transcript, phrase_triggers) if transcript is not None else None
+    phrase_match = (
+        find_phrase_match(transcript, phrase_triggers, sensitivity) if transcript is not None else None
+    )
     return SpeechRecognition(
         transcript=transcript,
         phrase_match=phrase_match,
@@ -307,3 +332,45 @@ def _normalize(value: str) -> str:
     without_marks = "".join(character for character in decomposed if not unicodedata.combining(character))
     words_only = re.sub(r"[^a-z0-9]+", " ", without_marks)
     return " ".join(words_only.split())
+
+
+def _phrase_similarity(left: str, right: str) -> float:
+    if left == right:
+        return 1.0
+    left_phonetic = "".join(_phonetic_key(token) for token in left.split())
+    right_phonetic = "".join(_phonetic_key(token) for token in right.split())
+    if left_phonetic and left_phonetic == right_phonetic:
+        return 0.9
+    return _edit_similarity(left, right)
+
+
+def _phonetic_key(token: str) -> str:
+    value = token.replace("ph", "f").replace("ck", "k")
+    collapsed: list[str] = []
+    for character in value:
+        if collapsed and collapsed[-1] == character:
+            continue
+        collapsed.append(character)
+    if not collapsed:
+        return ""
+    return collapsed[0] + "".join(
+        character for character in collapsed[1:] if character not in "aeiou"
+    )
+
+
+def _edit_similarity(left: str, right: str) -> float:
+    if not left or not right:
+        return 0.0
+    previous = list(range(len(right) + 1))
+    for left_index, left_character in enumerate(left, start=1):
+        current = [left_index]
+        for right_index, right_character in enumerate(right, start=1):
+            current.append(
+                min(
+                    current[-1] + 1,
+                    previous[right_index] + 1,
+                    previous[right_index - 1] + (left_character != right_character),
+                )
+            )
+        previous = current
+    return 1.0 - previous[-1] / max(len(left), len(right))

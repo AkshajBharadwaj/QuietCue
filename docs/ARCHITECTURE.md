@@ -22,7 +22,7 @@ Uno Q Linux side          uno_q/linux/
     v
 Connected hub             backend/ or frontend/android/
 - environmental classifier (computer or Samsung quantized ONNX)
-- gated Faster-Whisper speech path (name/phrase triggers)
+- gated Faster-Whisper (computer) or Whisper ONNX (Samsung) speech path
 - custom enrolled-sound matcher
 - profile + quiet-hours decision engine
 - alert state store + HTTP state API for the Android app
@@ -70,13 +70,14 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 | Demo classifier + no-hardware loop | `backend/inference/demo_classifier.py`, `scripts/run_no_hardware_demo.py` | Done |
 | YAMNet baseline classifier | `backend/inference/sound_classifier.py` | Done (baseline, not safety-certified) |
 | Gated speech path (Faster-Whisper) | `backend/inference/speech.py` | Done |
+| Samsung speech path (Whisper ONNX) | `frontend/android/app/src/main/java/com/quietcue/app/phone/speech/` | Implemented and JVM-tested; model/phone latency validation pending |
 | Profiles, quiet hours, enrollment, identity context | `backend/profiles/` | Done |
 | Sound Scout observation + recurring-label discovery | `backend/telemetry/` | Done on computer hub; persisted metadata and reviewed label rules |
 | Uno Q live microphone + signal diagnostics | `uno_q/linux/audio_capture/` | Done: USB mic validated; no event inference on board |
 | Uno Q transport + hub selection | `uno_q/linux/transport/` | Done |
 | Android companion app | `frontend/android/` | Done: profiles, private context, Sound Scout, and smart-place suggestions (optional for demo) |
 | On-phone geofence context | `frontend/android/app/src/main/java/com/quietcue/app/location/` | Done: local-only place rules, arrival/departure suggestions, opt-in automation, and demo simulation |
-| Samsung TCP inference hub | `frontend/android/app/src/main/java/com/quietcue/app/phone/` | Done; quantized YAMNet on ONNX Runtime CPU |
+| Samsung TCP inference hub | `frontend/android/app/src/main/java/com/quietcue/app/phone/` | Quantized YAMNet plus lazy Whisper ONNX on independent workers |
 | STM32 haptic firmware + RPC server | `uno_q/stm32/` | Done; App Lab firmware 0.2.0 |
 | Linux-side RPC client (alert -> motor) | `uno_q/linux/rpc_client/` | Done; real App Lab Bridge transport |
 | Board restart/reconnect lifecycle | `scripts/run_uno_q_client.sh`, `uno_q/linux/systemd/` | Done |

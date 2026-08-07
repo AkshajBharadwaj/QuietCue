@@ -24,6 +24,7 @@ models/**/*.pb
 models/**/*.data
 models/**/*.zip
 models/converted/qnn_cache*/
+models/source/whisper/
 
 # Committed deployment artifacts (small, quantized): the QUAD INT8 DLC and the
 # AI Hub w8a8 QDQ ONNX. The large fp32 source weights stay download-only.

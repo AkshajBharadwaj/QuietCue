@@ -1,5 +1,19 @@
 package com.quietcue.app.domain
 
+enum class SpeechModel(val displayName: String, val assetDirectory: String) {
+    TINY_EN("Tiny English", "tiny"),
+    BASE_EN("Base English", "base"),
+}
+
+data class SpeechSettings(
+    val enabled: Boolean = true,
+    val model: SpeechModel = SpeechModel.TINY_EN,
+    val sensitivity: Float = 0.6f,
+    val listenForIdentity: Boolean = true,
+    val listenForPeople: Boolean = false,
+    val globalPhrases: List<String> = emptyList(),
+)
+
 data class UserIdentity(
     val displayName: String,
     val pronunciation: String = "",
@@ -29,8 +43,10 @@ data class MemoryBank(
     val identity: UserIdentity? = null,
     val people: List<PersonMemory> = emptyList(),
     val contexts: List<ContextMemory> = emptyList(),
+    val speechSettings: SpeechSettings = SpeechSettings(),
 ) {
-    val isEmpty: Boolean get() = identity == null && people.isEmpty() && contexts.isEmpty()
+    val isEmpty: Boolean get() = identity == null && people.isEmpty() && contexts.isEmpty() &&
+        speechSettings == SpeechSettings()
 }
 
 object MemoryBankValidator {
@@ -65,6 +81,11 @@ object MemoryBankValidator {
                 add("Context details must be 1 to 500 characters.")
             }
         }
+        val speech = bank.speechSettings
+        if (speech.sensitivity !in 0.4f..0.95f) {
+            add("Speech sensitivity must be between 40% and 95%.")
+        }
+        validateTextList(speech.globalPhrases, 20, 40, "global speech phrases")?.let(::add)
     }.distinct()
 
     private fun validateTextList(

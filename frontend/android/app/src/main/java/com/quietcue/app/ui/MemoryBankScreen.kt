@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -44,6 +45,7 @@ import com.quietcue.app.domain.PersonMemory
 fun MemoryBankScreen(
     bank: MemoryBank,
     contentPadding: PaddingValues,
+    onEditSpeech: () -> Unit,
     onEditIdentity: () -> Unit,
     onEditPerson: (PersonMemory?) -> Unit,
     onDeletePerson: (String) -> Unit,
@@ -88,6 +90,34 @@ fun MemoryBankScreen(
                             "This bank is encrypted on your phone. QuietCue never creates memories from background conversations, and enrollment audio is not saved.",
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
+                    }
+                }
+            }
+        }
+
+        item { SectionTitle("Speech and names") }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.RecordVoiceOver, contentDescription = null)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            if (bank.speechSettings.enabled) "Local speech detection on" else "Local speech detection off",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            "${bank.speechSettings.model.displayName} • " +
+                                "${(bank.speechSettings.sensitivity * 100).toInt()}% sensitivity • " +
+                                "${bank.speechSettings.globalPhrases.size} global phrases",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = onEditSpeech) {
+                        Icon(Icons.Rounded.Edit, contentDescription = "Edit speech settings")
                     }
                 }
             }
@@ -216,7 +246,7 @@ fun MemoryBankScreen(
     if (confirmClear) {
         DeleteMemoryDialog(
             title = "Delete the entire memory bank?",
-            detail = "Your name enrollment, people, and manual context will be permanently removed. Profiles and enrolled sounds are not affected.",
+            detail = "Your speech settings, name enrollment, people, and manual context will be permanently removed. Profiles and enrolled sounds are not affected.",
             onDismiss = { confirmClear = false },
             onConfirm = {
                 onClearAll()

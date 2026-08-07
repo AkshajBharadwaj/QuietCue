@@ -12,6 +12,7 @@ object ProfileSyncJsonCodec {
         return JSONObject()
             .put("id", profile.id)
             .put("name", profile.name)
+            .put("speech_mode", profile.speechMode.name.lowercase())
             .put("phrase_triggers", JSONArray(profile.phraseTriggers))
             .put("speech_context", encodeSpeechContext(memoryBank))
             .put(
@@ -71,6 +72,16 @@ object ProfileSyncJsonCodec {
     }
 
     private fun encodeSpeechContext(bank: MemoryBank): JSONObject = JSONObject()
+        .put(
+            "settings",
+            JSONObject()
+                .put("enabled", bank.speechSettings.enabled)
+                .put("model", bank.speechSettings.model.name.lowercase())
+                .put("sensitivity", bank.speechSettings.sensitivity.toDouble())
+                .put("listen_for_identity", bank.speechSettings.listenForIdentity)
+                .put("listen_for_people", bank.speechSettings.listenForPeople)
+                .put("global_phrases", JSONArray(bank.speechSettings.globalPhrases)),
+        )
         .put(
             "identity",
             bank.identity?.let { identity ->

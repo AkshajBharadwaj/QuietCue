@@ -150,6 +150,12 @@ enum class BuiltInProfile {
     EMERGENCY,
 }
 
+enum class SpeechMode(val displayName: String) {
+    INHERIT("Use global setting"),
+    ALWAYS_ON("Always on"),
+    OFF("Off"),
+}
+
 data class QuietHours(
     val enabled: Boolean = false,
     val startMinutes: Int = 22 * 60,
@@ -187,6 +193,7 @@ data class AlertProfile(
     val color: ProfileColor = ProfileColor.OCEAN,
     val quietHours: QuietHours = QuietHours(),
     val activation: ActivationRule = ActivationRule(),
+    val speechMode: SpeechMode = SpeechMode.INHERIT,
     val phraseTriggers: List<String> = emptyList(),
     val soundRules: List<SoundRule>,
 ) {
