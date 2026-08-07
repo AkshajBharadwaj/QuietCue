@@ -47,6 +47,10 @@ class RecordingHapticTransport:
         self.calls.append(("play_haptic", pattern, intensity, repeat_count))
         return True
 
+    def play_custom_haptic(self, encoded_steps: str, intensity: int, repeat_count: int) -> bool:
+        self.calls.append(("play_custom_haptic", encoded_steps, intensity, repeat_count))
+        return True
+
     def stop_haptic(self) -> bool:
         self.calls.append(("stop_haptic",))
         return True
@@ -186,7 +190,6 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(response.body["alerts"][0]["event"], "custom:vacuum")
             self.assertEqual(response.body["alerts"][0]["pattern"], "two_short")
-            self.assertEqual(store.snapshot()["discoveries"]["candidates"], [])
         finally:
             server.close()
             await server.wait_closed()

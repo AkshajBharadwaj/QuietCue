@@ -74,6 +74,9 @@ class AppLabBridgeHapticTransport:
     def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> bool:
         return bool(self._call("play_haptic", pattern, intensity, repeat_count))
 
+    def play_custom_haptic(self, encoded_steps: str, intensity: int, repeat_count: int) -> bool:
+        return bool(self._call("play_custom_haptic", encoded_steps, intensity, repeat_count))
+
     def stop_haptic(self) -> bool:
         return bool(self._call("stop_haptic"))
 

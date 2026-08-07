@@ -18,6 +18,13 @@ object ProfileValidator {
         if (profile.soundRules.any { it.cooldownSeconds !in 0..120 }) {
             add("Cooldowns must be between 0 and 120 seconds.")
         }
+        if (profile.soundRules.any {
+                it.hapticPattern == HapticPattern.CUSTOM &&
+                    it.customHapticPattern?.isValid() != true
+            }
+        ) {
+            add("Every custom haptic must contain one to six valid touch-recorded pulses.")
+        }
         if (profile.phraseTriggers.any { it.length > 40 }) {
             add("Each name or phrase trigger must be 40 characters or fewer.")
         }

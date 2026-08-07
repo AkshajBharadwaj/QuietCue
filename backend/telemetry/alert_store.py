@@ -10,7 +10,6 @@ from typing import Any
 
 from backend.inference.pipeline import HubInferenceResult
 from backend.profiles.engine import AlertProfile, DecisionResult
-from backend.telemetry.sound_discovery import SoundDiscoveryTracker
 
 
 class AlertStateStore:
@@ -20,7 +19,6 @@ class AlertStateStore:
         self,
         profile: AlertProfile,
         jsonl_path: Path | None = None,
-        discovery_tracker: SoundDiscoveryTracker | None = None,
     ) -> None:
         self._profile = profile
         self._jsonl_path = jsonl_path
@@ -32,7 +30,6 @@ class AlertStateStore:
         self._latest_haptic_result: dict[str, Any] | None = None
         self._haptic_devices: dict[str, dict[str, Any]] = {}
         self._recent_observations: list[dict[str, Any]] = []
-        self._discovery_tracker = discovery_tracker or SoundDiscoveryTracker()
 
     def connected(self, session_id: str, device_id: str) -> None:
         self._sessions[session_id] = device_id
@@ -68,13 +65,6 @@ class AlertStateStore:
         }
         self._recent_observations.insert(0, observation)
         del self._recent_observations[100:]
-        self._discovery_tracker.observe(
-            inference.top_predictions,
-            mapped_source_labels=(event.source_label for event in inference.events),
-            profile_name=self._profile.name,
-            observed_at_ms=observed_at_ms,
-            custom_sound_matched=any(event.event.startswith("custom:") for event in inference.events),
-        )
         for alert in decisions.alerts:
             document = {
                 **alert.to_wire(),
@@ -166,10 +156,6 @@ class AlertStateStore:
             "latest_result": self._latest_result,
             "recent_alerts": list(self._recent_alerts),
             "recent_observations": list(self._recent_observations),
-            "discoveries": {
-                "candidates": self._discovery_tracker.candidates(),
-                "pending_count": self._discovery_tracker.pending_count(),
-            },
             "haptics": {
                 "connected_device_ids": [
                     device_id for device_id in device_ids if device_id in self._haptic_devices
@@ -178,13 +164,6 @@ class AlertStateStore:
                 "devices": dict(self._haptic_devices),
             },
         }
-
-    def update_discovery(self, candidate_id: str, action: str) -> dict[str, object]:
-        if action not in {"dismiss", "taught"}:
-            raise ValueError("Discovery action must be dismiss or taught")
-        if not self._discovery_tracker.dismiss(candidate_id):
-            raise ValueError("Unknown discovery candidate")
-        return {"status": action, "candidate_id": candidate_id}
 
     def _mark_haptic_stopped(self, event_id: str, *, acknowledged_at_ms: int) -> None:
         if self._latest_alert is not None and self._latest_alert.get("event_id") == event_id:

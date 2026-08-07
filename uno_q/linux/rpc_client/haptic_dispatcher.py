@@ -34,6 +34,10 @@ class HapticTransport(Protocol):
 
     def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> bool | None: ...
 
+    def play_custom_haptic(
+        self, encoded_steps: str, intensity: int, repeat_count: int
+    ) -> bool | None: ...
+
     def stop_haptic(self) -> bool | None: ...
 
     def get_button_state(self) -> bool: ...
@@ -50,19 +54,20 @@ class PatternPlan:
     pattern: str
     intensity: int
     repeat_count: int
+    custom_pattern: str = ""
 
 
 _CATEGORY_PLANS: dict[str, PatternPlan] = {
     "emergency": PatternPlan("urgent_repeat", 255, URGENT_REPEAT_UNTIL_STOPPED),
-    "attention": PatternPlan("long_pulse", 180, 1),
-    "informational": PatternPlan("two_short", 100, 1),
+    "attention": PatternPlan("long_pulse", 230, 1),
+    "informational": PatternPlan("two_short", 190, 1),
 }
 
 _FALLBACK_PLAN = _CATEGORY_PLANS["informational"]
 
 _STRENGTH_INTENSITIES = {
-    "gentle": 100,
-    "standard": 180,
+    "gentle": 190,
+    "standard": 230,
     "strong": 255,
 }
 
@@ -169,7 +174,20 @@ class AlertDispatcher:
             return DispatchOutcome(event, False, "cooldown_active", plan.pattern, event_id)
 
         try:
-            accepted = self._transport.play_haptic(plan.pattern, plan.intensity, plan.repeat_count)
+            if plan.pattern == "custom":
+                if not plan.custom_pattern:
+                    raise ValueError("custom pattern has no recorded steps")
+                accepted = self._transport.play_custom_haptic(
+                    plan.custom_pattern,
+                    plan.intensity,
+                    plan.repeat_count,
+                )
+            else:
+                accepted = self._transport.play_haptic(
+                    plan.pattern,
+                    plan.intensity,
+                    plan.repeat_count,
+                )
             if accepted is False:
                 raise RuntimeError(f"firmware refused pattern {plan.pattern!r}")
         except Exception as exc:  # noqa: BLE001 - hardware faults must not kill the stream loop.
@@ -225,7 +243,13 @@ class AlertDispatcher:
         )
         pattern = alert.get("pattern")
         if isinstance(pattern, str) and pattern:
-            return PatternPlan(pattern, intensity, plan.repeat_count)
+            custom_pattern = alert.get("custom_pattern")
+            return PatternPlan(
+                pattern,
+                intensity,
+                plan.repeat_count,
+                custom_pattern if isinstance(custom_pattern, str) else "",
+            )
         return PatternPlan(plan.pattern, intensity, plan.repeat_count)
 
     def _remember_event_id(self, event_id: str) -> None:
@@ -239,6 +263,13 @@ class ConsoleHapticTransport:
 
     def play_haptic(self, pattern: str, intensity: int, repeat_count: int) -> bool:
         print(f"RPC play_haptic(pattern={pattern!r}, intensity={intensity}, repeat_count={repeat_count})")
+        return True
+
+    def play_custom_haptic(self, encoded_steps: str, intensity: int, repeat_count: int) -> bool:
+        print(
+            "RPC play_custom_haptic("
+            f"encoded_steps={encoded_steps!r}, intensity={intensity}, repeat_count={repeat_count})"
+        )
         return True
 
     def stop_haptic(self) -> bool:

@@ -36,6 +36,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -407,6 +408,22 @@ private fun SoundRuleCard(
     onChange: (SoundRule) -> Unit,
 ) {
     var expanded by rememberSaveable(rule.soundId) { mutableStateOf(false) }
+    var showHapticCreator by rememberSaveable(rule.soundId) { mutableStateOf(false) }
+    if (showHapticCreator) {
+        HapticPatternCreatorDialog(
+            existing = rule.customHapticPattern,
+            onDismiss = { showHapticCreator = false },
+            onSave = { customPattern ->
+                onChange(
+                    rule.copy(
+                        hapticPattern = HapticPattern.CUSTOM,
+                        customHapticPattern = customPattern,
+                    ),
+                )
+                showHapticCreator = false
+            },
+        )
+    }
     Card(
         colors = CardDefaults.cardColors(
             containerColor = if (rule.enabled) MaterialTheme.colorScheme.surfaceContainer
@@ -500,8 +517,34 @@ private fun SoundRuleCard(
                         selected = rule.hapticPattern,
                         label = HapticPattern::displayName,
                         enabled = rule.enabled,
-                        onSelected = { onChange(rule.copy(hapticPattern = it)) },
+                        onSelected = { pattern ->
+                            if (pattern == HapticPattern.CUSTOM) {
+                                showHapticCreator = true
+                            } else {
+                                onChange(rule.copy(hapticPattern = pattern))
+                            }
+                        },
                     )
+                    OutlinedButton(
+                        onClick = { showHapticCreator = true },
+                        enabled = rule.enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (rule.customHapticPattern == null) "Create touch pattern"
+                            else "Edit ${rule.customHapticPattern.name}",
+                        )
+                    }
+                    if (rule.hapticPattern == HapticPattern.CUSTOM) {
+                        rule.customHapticPattern?.let { custom ->
+                            Text(
+                                "Using ${custom.name}: ${custom.steps.size} pulse" +
+                                    if (custom.steps.size == 1) "" else "s",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                    }
 
                     Text("Haptic strength", style = MaterialTheme.typography.labelLarge)
                     OptionChips(

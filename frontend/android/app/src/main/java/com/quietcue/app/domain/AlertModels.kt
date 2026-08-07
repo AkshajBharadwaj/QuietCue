@@ -23,24 +23,11 @@ data class DetectedAlert(
             .joinToString(" ") { word -> word.replaceFirstChar(Char::uppercase) }
 }
 
-data class SoundDiscoveryCandidate(
-    val id: String,
-    val label: String,
-    val episodes: Int,
-    val firstSeenMs: Long,
-    val lastSeenMs: Long,
-    val meanConfidence: Float,
-    val maxConfidence: Float,
-    val profileNames: List<String>,
-)
-
 data class RuntimeState(
     val backendConnected: Boolean = false,
     val audioSourceConnected: Boolean = false,
     val backendProfileName: String? = null,
     val latestAlert: DetectedAlert? = null,
-    val discoveries: List<SoundDiscoveryCandidate> = emptyList(),
-    val pendingDiscoveryCount: Int = 0,
     val errorMessage: String? = null,
     val stopInProgress: Boolean = false,
 )

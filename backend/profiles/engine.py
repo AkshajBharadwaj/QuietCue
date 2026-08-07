@@ -28,6 +28,7 @@ class SoundRule:
     strength: str
     requires_ack: bool
     cooldown_seconds: int
+    custom_pattern: str = ""
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,7 @@ class AlertCommand:
     total_after_capture_ms: int
     simulated: bool = True
     fallback_to_phone: bool = False
+    custom_pattern: str = ""
 
     def to_wire(self) -> dict[str, object]:
         return asdict(self)
@@ -165,6 +167,7 @@ class ProfileDecisionEngine:
                     issued_at_ms=issued_at_ms,
                     total_after_capture_ms=max(0, issued_at_ms - captured_at_ms),
                     fallback_to_phone=fallback_to_phone,
+                    custom_pattern=rule.custom_pattern,
                 )
             )
         return DecisionResult(tuple(alerts), tuple(suppressed))

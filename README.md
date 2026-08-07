@@ -27,9 +27,8 @@ Useful variants:
 
 ## Quick start (macOS, Linux, or WSL)
 
-The shell launcher creates `.venv`, starts both hub ports, configures and opens an
-already-installed Android companion through `adb` when available, and keeps
-Sound Scout metadata under `.quietcue/`:
+The shell launcher creates `.venv`, starts both hub ports, and configures and
+opens an already-installed Android companion through `adb` when available:
 
 ```bash
 ./scripts/run_demo.sh
@@ -41,13 +40,26 @@ Run the complete deterministic stage showcase with one command:
 ./scripts/run_demo.sh --showcase
 ```
 
+Run the real USB microphone on the Uno Q, connected ONNX classifier, and
+physical haptics together with one command from the computer:
+
+```bash
+./scripts/run_demo.sh --live
+```
+
+The live launcher auto-detects one reachable Uno Q over mDNS or Tailscale,
+selects its USB capture device, exposes the local hub, and starts the board
+client over SSH. A pairing token is optional for this trusted-network demo; SSH
+may request the board password. If discovery is ambiguous, add
+`--uno-host arduino@HOST`.
+
 Add `--install-android` to build/install the companion before launch, or
 `--exit-after-showcase` for an automated smoke test that stops when replay ends.
 
-Set `QUIETCUE_PAIRING_TOKEN` first when a real Uno Q will connect. On the
-board, use `scripts/setup_uno_q.sh` once and `scripts/deploy_uno_q.sh` to
+On the board, use `scripts/setup_uno_q.sh` once and `scripts/deploy_uno_q.sh` to
 pull, flash the tracked haptic firmware, and restart the managed microphone +
-haptic client.
+haptic client. Configure `QUIETCUE_PAIRING_TOKEN` on both devices when the
+development transport is exposed beyond a short trusted-network demo.
 
 ## Live Uno Q microphone
 
@@ -97,14 +109,6 @@ The Android companion can also create a reviewable profile draft from a natural-
 language situation description and enroll a user-specific sound with three phone-
 microphone examples plus background calibration. See
 [`docs/PROFILE_AGENT_AND_ENROLLMENT.md`](docs/PROFILE_AGENT_AND_ENROLLMENT.md).
-
-The computer hub also runs **Sound Scout**, a metadata-only discovery loop for
-recurring classifier labels that are not mapped to the active sound library. It
-groups continuous frames into separate episodes, ignores generic speech/music/noise
-labels, and offers reviewable Android cards after three episodes. Users can dismiss
-the suggestion, add a reviewed classifier-label rule directly to the active
-profile, or open enrollment with the label prefilled. Raw audio is never retained
-by discovery. See [`docs/SOUND_SCOUT.md`](docs/SOUND_SCOUT.md).
 
 The **My context** tab adds a private, manually controlled identity and context
 bank. Users can enroll their name and pronunciation, add people and life context,

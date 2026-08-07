@@ -11,6 +11,23 @@ microphone -> UNO Q PCM stream -> Samsung/PC model -> event/profile decision
            <- detection_result <-                  -> UNO Q -> STM32 vibration
 ```
 
+## One-command live demo
+
+After the one-time Uno Q setup and App Lab firmware installation, run this on
+the computer:
+
+```bash
+./scripts/run_demo.sh --live
+```
+
+This starts the real ONNX classifier, binds the hub to a reachable interface,
+finds one active Uno Q through `UNO_Q_HOST`, mDNS, or Tailscale, selects a USB
+ALSA capture device, and starts microphone streaming plus physical haptics over
+SSH. No pairing token is required for a short demo on a trusted network. SSH may
+ask for the board password. If automatic discovery is ambiguous, specify the
+board once with `--uno-host arduino@HOST`; use `--input-device` only when the
+automatic USB selection is wrong.
+
 The prototype microphone was detected as:
 
 - USB device: `31b2:0011 DCMT Technology USB Condenser Microphone`

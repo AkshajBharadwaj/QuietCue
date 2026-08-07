@@ -1,5 +1,8 @@
 package com.quietcue.app.data
 
+import com.quietcue.app.domain.CustomHapticPattern
+import com.quietcue.app.domain.CustomHapticStep
+import com.quietcue.app.domain.HapticPattern
 import com.quietcue.app.domain.ProfileDefaults
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -29,5 +32,32 @@ class ProfileJsonCodecTest {
         val restored = ProfileJsonCodec.decode(ProfileJsonCodec.encode(listOf(profile))).single()
 
         assertEquals(enrolledRule, restored.soundRules.single { it.soundId == enrolledRule.soundId })
+    }
+
+    @Test
+    fun `touch recorded haptic survives persistence round trip`() {
+        val custom = CustomHapticPattern(
+            name = "Knock knock",
+            steps = listOf(CustomHapticStep(420, 180), CustomHapticStep(650, 200)),
+        )
+        val profile = ProfileDefaults.newCustom().let { draft ->
+            draft.copy(
+                soundRules = draft.soundRules.mapIndexed { index, rule ->
+                    if (index == 0) {
+                        rule.copy(
+                            hapticPattern = HapticPattern.CUSTOM,
+                            customHapticPattern = custom,
+                        )
+                    } else {
+                        rule
+                    }
+                },
+            )
+        }
+
+        val restored = ProfileJsonCodec.decode(ProfileJsonCodec.encode(listOf(profile))).single()
+
+        assertEquals(custom, restored.soundRules.first().customHapticPattern)
+        assertEquals(HapticPattern.CUSTOM, restored.soundRules.first().hapticPattern)
     }
 }

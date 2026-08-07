@@ -1,6 +1,8 @@
 package com.quietcue.app.data
 
 import com.quietcue.app.domain.ContextMemory
+import com.quietcue.app.domain.CustomHapticPattern
+import com.quietcue.app.domain.CustomHapticStep
 import com.quietcue.app.domain.MemoryBank
 import com.quietcue.app.domain.PersonMemory
 import com.quietcue.app.domain.ProfileCatalog
@@ -45,7 +47,7 @@ class ProfileSyncJsonCodecTest {
         val sound = SoundDefinition(
             id = "custom:label:vacuum",
             displayName = "Vacuum cleaner",
-            description = "Found by Sound Scout",
+            description = "Classifier-label match",
             defaultPriority = AlertPriority.INFORMATIONAL,
             defaultHapticPattern = HapticPattern.TWO_SHORT,
             defaultHapticStrength = HapticStrength.GENTLE,
@@ -62,5 +64,37 @@ class ProfileSyncJsonCodecTest {
 
         assertEquals(sound.id, rule.getString("event"))
         assertEquals("Vacuum cleaner", rule.getString("label"))
+    }
+
+    @Test
+    fun `sync includes touch recorded custom haptic steps`() {
+        val custom = CustomHapticPattern(
+            "Knock knock",
+            listOf(CustomHapticStep(420, 180), CustomHapticStep(650, 200)),
+        )
+        val profiles = ProfileDefaults.all().map { profile ->
+            profile.copy(
+                soundRules = profile.soundRules.mapIndexed { index, rule ->
+                    if (index == 0) {
+                        rule.copy(
+                            hapticPattern = HapticPattern.CUSTOM,
+                            customHapticPattern = custom,
+                        )
+                    } else {
+                        rule
+                    }
+                },
+            )
+        }
+        val document = JSONObject(
+            ProfileSyncJsonCodec.encode(ProfileCatalog(profiles, ProfileDefaults.HOME_ID)),
+        )
+
+        val rule = document.getJSONArray("sound_rules").getJSONObject(0)
+        val customJson = rule.getJSONObject("custom_pattern")
+
+        assertEquals("custom", rule.getString("pattern"))
+        assertEquals("Knock knock", customJson.getString("name"))
+        assertEquals(420, customJson.getJSONArray("steps").getJSONObject(0).getInt("on_ms"))
     }
 }

@@ -9,10 +9,6 @@ import com.quietcue.app.domain.AlertProfile
 import com.quietcue.app.domain.ProfileCatalog
 import com.quietcue.app.domain.ProfileDefaults
 import com.quietcue.app.domain.ProfileValidator
-import com.quietcue.app.domain.AlertPriority
-import com.quietcue.app.domain.HapticPattern
-import com.quietcue.app.domain.HapticStrength
-import com.quietcue.app.domain.SoundDiscoveryCandidate
 import com.quietcue.app.domain.SoundDefinition
 import com.quietcue.app.domain.SoundLibrary
 import java.io.IOException
@@ -108,50 +104,6 @@ class ProfileRepository(private val context: Context) {
                     soundRules = completed.map { rule ->
                         if (rule.soundId == sound.id) {
                             ProfileDefaults.ruleForSound(sound, enabled = profile.id == activeId)
-                        } else rule
-                    },
-                )
-            }
-            preferences[Keys.customSoundsJson] = SoundLibraryJsonCodec.encode(customSounds)
-            preferences[Keys.profilesJson] = ProfileJsonCodec.encode(sortProfiles(profiles))
-        }
-    }
-
-    suspend fun addDiscoveredSound(candidate: SoundDiscoveryCandidate) {
-        require(candidate.id.startsWith("disc_") && candidate.label.isNotBlank()) {
-            "Invalid Sound Scout candidate"
-        }
-        val sound = SoundDefinition(
-            id = "custom:label:${candidate.id.removePrefix("disc_")}",
-            displayName = candidate.label.take(40),
-            description = "Recurring sound discovered locally by Sound Scout",
-            defaultPriority = AlertPriority.INFORMATIONAL,
-            defaultHapticPattern = HapticPattern.TWO_SHORT,
-            defaultHapticStrength = HapticStrength.GENTLE,
-            classifierLabels = listOf(candidate.label.take(100)),
-        )
-        context.profileDataStore.edit { preferences ->
-            val existingCustom = customSoundsFrom(preferences)
-            require(existingCustom.none { it.displayName.equals(sound.displayName, ignoreCase = true) }) {
-                "A sound with that name already exists"
-            }
-            require(existingCustom.none { existing ->
-                existing.classifierLabels.any { it.equals(candidate.label, ignoreCase = true) }
-            }) { "That classifier label is already configured" }
-            val customSounds = existingCustom + sound
-            val oldLibrary = SoundLibrary.complete(existingCustom)
-            val library = SoundLibrary.complete(customSounds)
-            val activeId = preferences[Keys.activeProfileId] ?: ProfileDefaults.HOME_ID
-            val suggestedThreshold = (candidate.meanConfidence - 0.10f).coerceIn(0.35f, 0.80f)
-            val profiles = profilesFrom(preferences, oldLibrary).map { profile ->
-                val completed = ProfileDefaults.completeRules(profile.soundRules, library)
-                profile.copy(
-                    soundRules = completed.map { rule ->
-                        if (rule.soundId == sound.id) {
-                            ProfileDefaults.ruleForSound(sound, enabled = profile.id == activeId).copy(
-                                confidenceThreshold = suggestedThreshold,
-                                cooldownSeconds = 30,
-                            )
                         } else rule
                     },
                 )

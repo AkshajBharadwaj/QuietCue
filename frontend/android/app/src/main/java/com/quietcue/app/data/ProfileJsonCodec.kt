@@ -5,6 +5,8 @@ import com.quietcue.app.domain.ActivityContext
 import com.quietcue.app.domain.AlertPriority
 import com.quietcue.app.domain.AlertProfile
 import com.quietcue.app.domain.BuiltInProfile
+import com.quietcue.app.domain.CustomHapticPattern
+import com.quietcue.app.domain.CustomHapticStep
 import com.quietcue.app.domain.HapticPattern
 import com.quietcue.app.domain.HapticStrength
 import com.quietcue.app.domain.ProfileColor
@@ -17,7 +19,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object ProfileJsonCodec {
-    private const val VERSION = 2
+    private const val VERSION = 3
 
     fun encode(profiles: List<AlertProfile>): String = JSONObject()
         .put("version", VERSION)
@@ -61,8 +63,7 @@ object ProfileJsonCodec {
             "soundRules",
             JSONArray().apply {
                 profile.soundRules.forEach { rule ->
-                    put(
-                        JSONObject()
+                    val ruleJson = JSONObject()
                             .put("soundId", rule.soundId)
                             .put("enabled", rule.enabled)
                             .put("confidenceThreshold", rule.confidenceThreshold.toDouble())
@@ -70,8 +71,23 @@ object ProfileJsonCodec {
                             .put("hapticPattern", rule.hapticPattern.name)
                             .put("hapticStrength", rule.hapticStrength.name)
                             .put("requiresAcknowledgement", rule.requiresAcknowledgement)
-                            .put("cooldownSeconds", rule.cooldownSeconds),
-                    )
+                            .put("cooldownSeconds", rule.cooldownSeconds)
+                    rule.customHapticPattern?.let { custom ->
+                        ruleJson.put(
+                            "customHapticPattern",
+                            JSONObject()
+                                .put("name", custom.name)
+                                .put(
+                                    "steps",
+                                    JSONArray().apply {
+                                        custom.steps.forEach { step ->
+                                            put(JSONObject().put("onMs", step.onMs).put("offMs", step.offMs))
+                                        }
+                                    },
+                                ),
+                        )
+                    }
+                    put(ruleJson)
                 }
             },
         )
@@ -135,6 +151,7 @@ object ProfileJsonCodec {
         }
         if (soundId.isBlank()) return null
         val fallback = ProfileDefaults.fallbackRule(soundId)
+        val hapticPattern = json.enumOrNull<HapticPattern>("hapticPattern") ?: fallback.hapticPattern
         return SoundRule(
             soundId = soundId,
             enabled = json.optBoolean("enabled", fallback.enabled),
@@ -143,14 +160,28 @@ object ProfileJsonCodec {
                 fallback.confidenceThreshold.toDouble(),
             ).toFloat().coerceIn(0.20f, 0.95f),
             priority = json.enumOrNull<AlertPriority>("priority") ?: fallback.priority,
-            hapticPattern = json.enumOrNull<HapticPattern>("hapticPattern") ?: fallback.hapticPattern,
+            hapticPattern = hapticPattern,
             hapticStrength = json.enumOrNull<HapticStrength>("hapticStrength") ?: fallback.hapticStrength,
             requiresAcknowledgement = json.optBoolean(
                 "requiresAcknowledgement",
                 fallback.requiresAcknowledgement,
             ),
             cooldownSeconds = json.optInt("cooldownSeconds", fallback.cooldownSeconds).coerceIn(0, 120),
+            customHapticPattern = decodeCustomHaptic(json.optJSONObject("customHapticPattern"))
+                ?.takeIf { hapticPattern == HapticPattern.CUSTOM },
         )
+    }
+
+    private fun decodeCustomHaptic(json: JSONObject?): CustomHapticPattern? {
+        json ?: return null
+        val stepsJson = json.optJSONArray("steps") ?: return null
+        val steps = buildList {
+            for (index in 0 until minOf(stepsJson.length(), CustomHapticPattern.MAX_STEPS)) {
+                val step = stepsJson.optJSONObject(index) ?: continue
+                add(CustomHapticStep(step.optInt("onMs"), step.optInt("offMs")))
+            }
+        }
+        return CustomHapticPattern(json.optString("name").take(30), steps).takeIf(CustomHapticPattern::isValid)
     }
 
     private inline fun <reified T : Enum<T>> JSONObject.enumOrNull(key: String): T? {
