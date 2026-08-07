@@ -223,7 +223,7 @@ class ProfileViewModel(
                         name = "Hackathon venue",
                         latitude = 0.0,
                         longitude = 0.0,
-                        radiusMeters = 150f,
+                        radiusMeters = 15f,
                         profileId = target.id,
                         demoOnly = true,
                     ),

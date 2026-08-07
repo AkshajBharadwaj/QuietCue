@@ -58,6 +58,6 @@ class SmartProfileJsonCodecTest {
 
         assertEquals(false, restored.places.single().autoApply)
         assertEquals(false, restored.places.single().demoOnly)
-        assertEquals(150f, restored.places.single().radiusMeters)
+        assertEquals(15f, restored.places.single().radiusMeters)
     }
 }

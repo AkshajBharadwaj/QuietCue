@@ -385,7 +385,7 @@ private fun AddPlaceDialog(
 ) {
     var name by remember { mutableStateOf("") }
     var profileId by remember(defaultProfileId) { mutableStateOf(defaultProfileId) }
-    var radius by remember { mutableStateOf(150f) }
+    var radius by remember { mutableStateOf(15f) }
     var menuExpanded by remember { mutableStateOf(false) }
     val profile = profiles.firstOrNull { it.id == profileId } ?: profiles.firstOrNull()
 
@@ -427,8 +427,7 @@ private fun AddPlaceDialog(
                 Slider(
                     value = radius,
                     onValueChange = { radius = it },
-                    valueRange = 100f..500f,
-                    steps = 7,
+                    valueRange = 15f..500f,
                 )
             }
         },

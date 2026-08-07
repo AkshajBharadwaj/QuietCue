@@ -66,7 +66,7 @@ object SmartProfileJsonCodec {
         name = json.getString("name"),
         latitude = json.getDouble("latitude"),
         longitude = json.getDouble("longitude"),
-        radiusMeters = json.optDouble("radiusMeters", 150.0).toFloat().coerceIn(100f, 1_000f),
+        radiusMeters = json.optDouble("radiusMeters", 15.0).toFloat().coerceIn(15f, 1_000f),
         profileId = json.getString("profileId"),
         enabled = json.optBoolean("enabled", true),
         autoApply = json.optBoolean("autoApply", false),

@@ -12,7 +12,7 @@ data class SmartPlace(
     val name: String,
     val latitude: Double,
     val longitude: Double,
-    val radiusMeters: Float = 150f,
+    val radiusMeters: Float = 15f,
     val profileId: String,
     val enabled: Boolean = true,
     val autoApply: Boolean = false,
@@ -22,7 +22,7 @@ data class SmartPlace(
         require(name.isNotBlank()) { "Give the place a name" }
         require(latitude in -90.0..90.0) { "Invalid latitude" }
         require(longitude in -180.0..180.0) { "Invalid longitude" }
-        require(radiusMeters in 100f..1_000f) { "Place radius must be between 100 and 1,000 meters" }
+        require(radiusMeters in 15f..1_000f) { "Place radius must be between 15 and 1,000 meters" }
         require(profileId.isNotBlank()) { "Choose a profile" }
     }
 }
