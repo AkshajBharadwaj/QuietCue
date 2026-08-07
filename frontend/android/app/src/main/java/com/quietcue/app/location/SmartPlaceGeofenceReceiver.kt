@@ -5,13 +5,17 @@ import android.content.Context
 import android.content.Intent
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
+import com.quietcue.app.data.AlertRepository
+import com.quietcue.app.data.MemoryRepository
 import com.quietcue.app.data.ProfileRepository
 import com.quietcue.app.data.SmartProfileCoordinator
 import com.quietcue.app.data.SmartProfileRepository
+import com.quietcue.app.data.SmartTransitionResultType
 import com.quietcue.app.domain.PlaceTransition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class SmartPlaceGeofenceReceiver : BroadcastReceiver() {
@@ -30,12 +34,19 @@ class SmartPlaceGeofenceReceiver : BroadcastReceiver() {
         val applicationContext = context.applicationContext
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val coordinator = SmartProfileCoordinator(
-                    ProfileRepository(applicationContext),
-                    SmartProfileRepository(applicationContext),
-                )
+                val profileRepository = ProfileRepository(applicationContext)
+                val smartRepository = SmartProfileRepository(applicationContext)
+                val coordinator = SmartProfileCoordinator(profileRepository, smartRepository)
                 placeIds.forEach { placeId ->
                     val result = coordinator.handleTransition(placeId, transition)
+                    if (result.type == SmartTransitionResultType.ACTIVATED) {
+                        runCatching {
+                            AlertRepository().syncProfile(
+                                profileRepository.catalog.first(),
+                                MemoryRepository(applicationContext).bank.first(),
+                            )
+                        }
+                    }
                     SmartProfileNotification.show(
                         applicationContext,
                         result,

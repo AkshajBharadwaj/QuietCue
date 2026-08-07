@@ -14,6 +14,11 @@ class SmartProfilePolicyTest {
     private val profiles = setOf("profile-home", "profile-work")
 
     @Test
+    fun `real places default to a reliable geofence radius`() {
+        assertEquals(150f, work.radiusMeters)
+    }
+
+    @Test
     fun `arrival suggests the mapped profile by default`() {
         val decision = SmartProfilePolicy.decide(
             place = work,

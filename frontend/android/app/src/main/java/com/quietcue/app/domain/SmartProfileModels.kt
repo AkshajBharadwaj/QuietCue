@@ -12,7 +12,7 @@ data class SmartPlace(
     val name: String,
     val latitude: Double,
     val longitude: Double,
-    val radiusMeters: Float = 15f,
+    val radiusMeters: Float = 150f,
     val profileId: String,
     val enabled: Boolean = true,
     val autoApply: Boolean = false,

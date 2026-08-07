@@ -183,6 +183,26 @@ class SmartProfileRepository(private val context: Context) {
         val suggestion = state.suggestion?.takeIf {
             nowEpochMs - it.createdAtEpochMs < SmartProfilePolicy.SUGGESTION_EXPIRY_MS
         }
-        return if (suggestion === state.suggestion) state else state.copy(suggestion = suggestion)
+        // Earlier builds defaulted real places to a room-scale 15 m radius,
+        // which normal fused-location accuracy cannot trigger reliably. Migrate
+        // only that exact legacy default; preserve deliberate custom radii and
+        // the 15 m demo-only fixture.
+        val places = state.places.map { place ->
+            if (!place.demoOnly && place.radiusMeters == LEGACY_DEFAULT_RADIUS_METERS) {
+                place.copy(radiusMeters = RELIABLE_DEFAULT_RADIUS_METERS)
+            } else {
+                place
+            }
+        }
+        return if (suggestion === state.suggestion && places == state.places) {
+            state
+        } else {
+            state.copy(suggestion = suggestion, places = places)
+        }
+    }
+
+    companion object {
+        private const val LEGACY_DEFAULT_RADIUS_METERS = 15f
+        private const val RELIABLE_DEFAULT_RADIUS_METERS = 150f
     }
 }

@@ -8,7 +8,10 @@ coordinates to the PC hub, Uno Q, or a cloud service.
 
 1. Open **Places** and choose **Save my current place**.
 2. Name the place, select its profile, and choose a 15–500 metre boundary. New
-   places default to 15 metres for room-scale demos.
+   real places default to 150 metres for reliable phone geofencing. Boundaries
+   below 100 metres remain available only for explicit simulations and experiments.
+   Real places saved with the former 15-metre default migrate to 150 metres;
+   demo-only places remain unchanged.
 3. Grant precise location to capture the boundary. Grant **Allow all the time**
    if suggestions should arrive while QuietCue is not visible.
 4. On arrival, QuietCue initially asks whether to switch profiles.
@@ -23,8 +26,9 @@ transition events are suppressed for five minutes.
 
 - Place names, coordinates, radii, and decisions are stored only in Android
   DataStore on the phone. Android backup is disabled for the application.
-- The hub receives the selected profile through the existing profile sync; it
-  never receives coordinates.
+- The hub receives the selected profile through the existing profile sync,
+  including when an automatic transition occurs in the background; it never
+  receives coordinates.
 - QuietCue registers Android geofences instead of polling GPS continuously.
 - Location is requested only from the Places feature, never at startup.
 - The app remains usable when location access is declined.
