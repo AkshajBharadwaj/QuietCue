@@ -4,8 +4,12 @@ import math
 import struct
 import unittest
 
-from backend.inference.custom_sound_matcher import CustomSoundMatcher, fingerprint_pcm16
-from backend.profiles.engine import ProfileDecisionEngine
+from backend.inference.custom_sound_matcher import (
+    CustomSoundMatcher,
+    fingerprint_pcm16,
+    speech_confidence_from_predictions,
+)
+from backend.profiles.engine import CustomSoundPrototype, ProfileDecisionEngine
 from backend.profiles.wire_codec import decode_profile
 
 
@@ -131,9 +135,67 @@ class CustomSoundEnrollmentTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "one and 30"):
             decode_profile(document)
 
+    def test_speech_dominated_audio_cannot_trigger_an_enrolled_sound(self) -> None:
+        pcm = _tone_pcm16(1_000)
+        prototype, _ = fingerprint_pcm16(pcm, 16_000)
+        profile = decode_profile(
+            {
+                "id": "speech-safe", "name": "Speech safe",
+                "sound_rules": [{
+                    "event": "custom:buzzer", "enabled": True, "confidence_threshold": 0.9,
+                    "category": "attention", "pattern": "long_pulse", "strength": "standard",
+                    "requires_ack": False, "cooldown_seconds": 20,
+                }],
+                "custom_sounds": [{
+                    "event": "custom:buzzer", "label": "Buzzer",
+                    "prototype": list(prototype), "prototypes": [list(prototype)] * 3,
+                    "similarity_threshold": 0.9, "matcher_version": 3,
+                }],
+            }
+        )
+
+        matches = CustomSoundMatcher(profile.custom_sounds).match_pcm16(
+            pcm,
+            16_000,
+            speech_confidence=0.2,
+        )
+
+        self.assertEqual((), matches)
+
+    def test_new_matcher_rejects_a_candidate_supported_by_only_one_repeat(self) -> None:
+        second = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        third = [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        centroid = [1 / math.sqrt(3)] * 3 + [0.0] * 5
+        candidate = b"".join(struct.pack("<h", sample) for sample in _tone_samples(1_000))
+        candidate_features, _ = fingerprint_pcm16(candidate, 16_000)
+        enrolled = CustomSoundPrototype(
+            event="custom:buzzer",
+            label="Buzzer",
+            prototype=tuple(centroid),
+            similarity_threshold=0.9,
+            matcher_version=4,
+            prototypes=(candidate_features, tuple(second), tuple(third)),
+        )
+
+        self.assertEqual((), CustomSoundMatcher((enrolled,)).match_pcm16(candidate, 16_000))
+
+    def test_speech_confidence_uses_explicit_speech_labels_only(self) -> None:
+        confidence = speech_confidence_from_predictions(
+            (
+                {"label": "Speech", "confidence": 0.72},
+                {"label": "Baby cry, infant cry", "confidence": 0.91},
+            )
+        )
+
+        self.assertEqual(0.72, confidence)
+
 
 def _tone_pcm16(frequency: int, seconds: float = 0.5) -> bytes:
-    return b"".join(
-        struct.pack("<h", round(12_000 * math.sin(2 * math.pi * frequency * index / 16_000)))
+    return b"".join(struct.pack("<h", sample) for sample in _tone_samples(frequency, seconds))
+
+
+def _tone_samples(frequency: int, seconds: float = 0.5) -> list[int]:
+    return [
+        round(12_000 * math.sin(2 * math.pi * frequency * index / 16_000))
         for index in range(round(16_000 * seconds))
-    )
+    ]

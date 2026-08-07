@@ -24,13 +24,13 @@ deliver to the STM32 haptic firmware.
 - Local validation and unit tests for defaults, times, and persistence encoding.
 - Local hub status, latest event, confidence, latency, backend profile,
   hardware-confirmed haptic output, and a Stop vibration control on the dashboard.
-- System notifications for newly detected alerts while the app is running and
-  notification permission is granted.
+- System notifications for newly detected alerts from the sticky background
+  service, including a Stop vibration action for active emergency patterns.
 - A constrained local profile assistant that turns a situation description into
   a complete draft for explicit user review.
-- Custom sound enrollment using 3–30 retained two-second fingerprints (6–10
-  varied examples recommended), background and optional confusing-sound
-  calibration, and a pre-save recognition test. Raw audio is discarded immediately.
+- One-tap custom sound teaching through the live Uno Q microphone: a guided
+  ten-second session automatically extracts 3–30 repeated events, rejects
+  speech-dominated chunks, calibrates room background, and discards raw audio.
 - Active-profile and enrolled-fingerprint synchronization to the local hub.
 - A foreground TCP inference service on port `8765` using the checked-in quantized
   W8A8 YAMNet ONNX model and ONNX Runtime for Android.
@@ -127,8 +127,9 @@ adb reverse tcp:8787 tcp:8787
 ```
 
 The app requests network permission for local metadata/profile synchronization and
-the TCP inference listener, and microphone permission only while the user explicitly
-records enrollment examples. Continuous monitoring audio remains on the Uno Q. See
+the TCP inference listener. Custom-sound teaching uses the live Uno Q microphone;
+phone microphone permission is reserved for explicit on-phone identity/name tools.
+Continuous monitoring audio remains on the Uno Q. See
 [`../../docs/NO_HARDWARE_DEMO.md`](../../docs/NO_HARDWARE_DEMO.md) for the complete
 microphone-free workflow.
 

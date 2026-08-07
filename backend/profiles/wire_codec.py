@@ -112,7 +112,7 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
                 label=_required_text(item, "label", 40),
                 prototype=prototype,
                 similarity_threshold=_bounded_float(item.get("similarity_threshold"), 0.70, 0.98),
-                matcher_version=_bounded_int(item.get("matcher_version", 1), 1, 2),
+                matcher_version=_bounded_int(item.get("matcher_version", 1), 1, 4),
                 prototypes=tuple(prototypes),
             )
         )

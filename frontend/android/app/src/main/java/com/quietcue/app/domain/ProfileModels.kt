@@ -103,7 +103,7 @@ data class SoundEnrollment(
     val positiveSampleCount: Int,
     val backgroundSimilarity: Float,
     val createdAtEpochMs: Long,
-    val matcherVersion: Int = 2,
+    val matcherVersion: Int = 4,
 )
 
 data class SoundDefinition(

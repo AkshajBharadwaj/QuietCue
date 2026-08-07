@@ -11,6 +11,8 @@ from __future__ import annotations
 import math
 import sys
 from array import array
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from backend.inference.pipeline import ConfirmedEvent
 from backend.profiles.engine import CustomSoundPrototype
@@ -18,6 +20,11 @@ from backend.profiles.engine import CustomSoundPrototype
 
 SAMPLE_RATE = 16_000
 FREQUENCIES = (250, 375, 500, 750, 1_000, 1_500, 2_000, 3_000)
+# YAMNet often assigns ordinary conversation a moderate Speech score rather
+# than a dominant one. Custom fingerprints are intentionally conservative:
+# speech is far more likely to be a false alarm than a useful custom cue.
+SPEECH_REJECTION_CONFIDENCE = 0.15
+SPEECH_LABEL_MARKERS = ("speech", "speaking", "conversation", "narration", "whisper")
 
 
 class CustomSoundMatcher:
@@ -27,9 +34,15 @@ class CustomSoundMatcher:
     def set_prototypes(self, prototypes: tuple[CustomSoundPrototype, ...]) -> None:
         self._prototypes = prototypes
 
-    def match_pcm16(self, pcm: bytes, sample_rate: int) -> tuple[ConfirmedEvent, ...]:
+    def match_pcm16(
+        self,
+        pcm: bytes,
+        sample_rate: int,
+        *,
+        speech_confidence: float = 0.0,
+    ) -> tuple[ConfirmedEvent, ...]:
         prototypes = self._prototypes
-        if not prototypes:
+        if not prototypes or speech_confidence >= SPEECH_REJECTION_CONFIDENCE:
             return ()
         features, rms_dbfs = fingerprint_pcm16(pcm, sample_rate)
         if rms_dbfs < -48.0:
@@ -37,9 +50,24 @@ class CustomSoundMatcher:
         matches: list[ConfirmedEvent] = []
         for enrolled in prototypes:
             reference_prototypes = enrolled.prototypes or (enrolled.prototype,)
-            similarity = max(cosine_similarity(features, prototype) for prototype in reference_prototypes)
+            similarities = sorted(
+                (cosine_similarity(features, prototype) for prototype in reference_prototypes),
+                reverse=True,
+            )
+            similarity = similarities[0]
             if similarity < enrolled.similarity_threshold:
                 continue
+            if enrolled.matcher_version >= 4 and len(similarities) >= 3:
+                # A single broad-band speech frame can look like one taught
+                # example. New enrollments therefore need support from a
+                # second repeat and from the averaged prototype as well.
+                tolerance = 0.04
+                centroid_similarity = cosine_similarity(features, enrolled.prototype)
+                if (
+                    similarities[1] < enrolled.similarity_threshold - tolerance
+                    or centroid_similarity < enrolled.similarity_threshold - tolerance
+                ):
+                    continue
             matches.append(
                 ConfirmedEvent(
                     event=enrolled.event,
@@ -51,6 +79,20 @@ class CustomSoundMatcher:
                 )
             )
         return tuple(sorted(matches, key=lambda event: event.confidence, reverse=True)[:3])
+
+
+def speech_confidence_from_predictions(predictions: Iterable[Mapping[str, Any]]) -> float:
+    """Return the strongest classifier score that clearly represents speech."""
+    confidence = 0.0
+    for prediction in predictions:
+        label = str(prediction.get("label", "")).casefold()
+        if not any(marker in label for marker in SPEECH_LABEL_MARKERS):
+            continue
+        try:
+            confidence = max(confidence, float(prediction.get("confidence", 0.0)))
+        except (TypeError, ValueError):
+            continue
+    return max(0.0, min(1.0, confidence))
 
 
 def fingerprint_pcm16(pcm: bytes, sample_rate: int) -> tuple[tuple[float, ...], float]:

@@ -14,7 +14,11 @@ from pathlib import Path
 
 from backend.app.status_server import StatusHttpServer
 from backend.communication.stream_protocol import ProtocolError, WireMessage, read_message, write_message
-from backend.inference.custom_sound_matcher import CustomSoundMatcher
+from backend.inference.custom_sound_matcher import (
+    CustomSoundMatcher,
+    speech_confidence_from_predictions,
+)
+from backend.inference.enrollment_capture import EnrollmentCaptureController
 from backend.inference.classifier_label_matcher import ClassifierLabelMatcher
 from backend.inference.pipeline import HubInferencePipeline, HubInferenceResult, SoundClassifier
 from backend.profiles.defaults import all_profiles, get_profile
@@ -37,6 +41,7 @@ class QuietCueHubServer:
         custom_matcher: CustomSoundMatcher | None = None,
         classifier_label_matcher: ClassifierLabelMatcher | None = None,
         pairing_token: str = "",
+        enrollment_capture: EnrollmentCaptureController | None = None,
     ) -> None:
         self._pipeline_factory = pipeline_factory
         self._pipeline: HubInferencePipeline | None = None
@@ -48,6 +53,7 @@ class QuietCueHubServer:
             decision_engine.profile.classifier_label_rules
         )
         self._pairing_token = pairing_token
+        self._enrollment_capture = enrollment_capture or EnrollmentCaptureController()
         self._control_queues: dict[str, list[dict[str, object]]] = {}
 
     def stop_haptic(self, event_id: str | None = None) -> dict[str, object]:
@@ -204,6 +210,7 @@ class QuietCueHubServer:
                 self._custom_matcher.match_pcm16,
                 message.payload,
                 sample_rate,
+                speech_confidence=speech_confidence_from_predictions(inference.top_predictions),
             )
             label_events = self._classifier_label_matcher.match_predictions(
                 inference.top_predictions
@@ -216,6 +223,11 @@ class QuietCueHubServer:
                     if existing is None or event.confidence > existing.confidence:
                         strongest[event.event] = event
                 inference = replace(inference, events=tuple(strongest.values()))
+            self._enrollment_capture.observe(
+                message.payload,
+                sample_rate,
+                speech_confidence=speech_confidence_from_predictions(inference.top_predictions),
+            )
         decisions = self._decision_engine.decide(
             inference.events,
             captured_at_ms=captured_at_ms,
@@ -337,6 +349,7 @@ async def serve(
     decision_engine = ProfileDecisionEngine(profile)
     custom_matcher = CustomSoundMatcher(profile.custom_sounds)
     classifier_label_matcher = ClassifierLabelMatcher(profile.classifier_label_rules)
+    enrollment_capture = EnrollmentCaptureController()
     hub = QuietCueHubServer(
         _pipeline_factory(
             classifier,
@@ -350,6 +363,7 @@ async def serve(
         custom_matcher,
         classifier_label_matcher,
         pairing_token=pairing_token,
+        enrollment_capture=enrollment_capture,
     )
 
     def update_profile(document: dict[str, object]) -> dict[str, object]:
@@ -374,6 +388,9 @@ async def serve(
         state_store.snapshot,
         update_profile=update_profile,
         stop_haptic=hub.stop_haptic,
+        start_enrollment=enrollment_capture.start,
+        enrollment_status=enrollment_capture.status,
+        cancel_enrollment=enrollment_capture.cancel,
     )
     audio_server = await asyncio.start_server(hub.handle_client, host, port)
     state_server = await asyncio.start_server(status.handle_client, state_host, state_port)

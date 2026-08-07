@@ -134,6 +134,37 @@ class DemoPipelineTest(unittest.TestCase):
         self.assertEqual(decisions.alerts[0].strength, "gentle")
         self.assertTrue(decisions.alerts[0].fallback_to_phone)
 
+    def test_attention_alert_does_not_hide_pending_emergency_acknowledgement(self) -> None:
+        profile = get_profile("home")
+        pipeline = HubInferencePipeline(DemoToneSoundClassifier())
+        engine = ProfileDecisionEngine(profile)
+        store = AlertStateStore(profile)
+
+        fire = pipeline.process_pcm16(generate_tone_pcm("fire_alarm", 0.5), 16_000)
+        store.record(
+            0,
+            fire,
+            engine.decide(fire.events, captured_at_ms=1_000, source_sequence=0, now_ms=1_010),
+            captured_at_ms=1_000,
+        )
+        doorbell = pipeline.process_pcm16(generate_tone_pcm("doorbell_knock", 0.5), 16_000)
+        store.record(
+            1,
+            doorbell,
+            engine.decide(
+                doorbell.events,
+                captured_at_ms=2_000,
+                source_sequence=1,
+                now_ms=2_010,
+            ),
+            captured_at_ms=2_000,
+        )
+
+        snapshot = store.snapshot()
+        self.assertEqual("fire_alarm", snapshot["latest_alert"]["event"])
+        self.assertTrue(snapshot["latest_alert"]["haptic_active"])
+        self.assertEqual("doorbell_knock", snapshot["recent_alerts"][0]["event"])
+
 
 class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
     async def test_approved_classifier_label_reaches_profile_alert_pipeline(self) -> None:

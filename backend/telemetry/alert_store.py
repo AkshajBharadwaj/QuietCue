@@ -71,7 +71,15 @@ class AlertStateStore:
                 "haptic_active": alert.requires_ack,
                 "acknowledged_at_ms": None,
             }
-            self._latest_alert = document
+            # Keep an acknowledgement-required alert visible until it is
+            # stopped. A later informational/attention detection must not hide
+            # the only in-app control capable of stopping the active motor.
+            if (
+                self._latest_alert is None
+                or not bool(self._latest_alert.get("haptic_active", False))
+                or document["haptic_active"]
+            ):
+                self._latest_alert = document
             self._recent_alerts.insert(0, document)
             del self._recent_alerts[20:]
             self._append_jsonl(document)

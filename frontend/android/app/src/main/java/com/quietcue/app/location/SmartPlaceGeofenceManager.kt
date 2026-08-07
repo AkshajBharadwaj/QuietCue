@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.location.Geofence
@@ -53,6 +54,7 @@ class SmartPlaceGeofenceManager(
 
         val places = repository.current().places.filter { it.enabled && !it.demoOnly }
         runCatching { client.removeGeofences(pendingIntent).awaitTask() }
+            .onFailure { Log.w(TAG, "Could not clear previous geofences", it) }
         if (places.isEmpty()) return GeofenceRegistrationStatus.NO_PLACES
 
         val geofences = places.map { place ->
@@ -71,12 +73,14 @@ class SmartPlaceGeofenceManager(
             .addGeofences(geofences)
             .build()
         client.addGeofences(request, pendingIntent).awaitTask()
+        Log.i(TAG, "Registered ${places.size} smart place geofence(s)")
         return GeofenceRegistrationStatus.ACTIVE
     }
 
     companion object {
         private const val REQUEST_CODE = 7301
         private const val NOTIFICATION_RESPONSIVENESS_MS = 60_000
+        private const val TAG = "QuietCuePlaces"
     }
 }
 

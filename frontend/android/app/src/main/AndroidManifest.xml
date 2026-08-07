@@ -32,6 +32,9 @@
             android:name=".location.SmartPlaceGeofenceReceiver"
             android:exported="false" />
         <receiver
+            android:name=".data.AlertAcknowledgeReceiver"
+            android:exported="false" />
+        <receiver
             android:name=".location.SmartPlaceBootReceiver"
             android:enabled="true"
             android:exported="false">

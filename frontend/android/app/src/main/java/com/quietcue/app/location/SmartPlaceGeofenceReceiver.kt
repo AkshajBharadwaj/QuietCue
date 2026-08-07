@@ -3,6 +3,7 @@ package com.quietcue.app.location
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
 import com.quietcue.app.data.AlertRepository
@@ -21,7 +22,10 @@ import kotlinx.coroutines.launch
 class SmartPlaceGeofenceReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val event = GeofencingEvent.fromIntent(intent) ?: return
-        if (event.hasError()) return
+        if (event.hasError()) {
+            Log.w(TAG, "Geofence callback failed with code ${event.errorCode}")
+            return
+        }
         val transition = when (event.geofenceTransition) {
             Geofence.GEOFENCE_TRANSITION_ENTER -> PlaceTransition.ENTER
             Geofence.GEOFENCE_TRANSITION_EXIT -> PlaceTransition.EXIT
@@ -45,8 +49,11 @@ class SmartPlaceGeofenceReceiver : BroadcastReceiver() {
                                 profileRepository.catalog.first(),
                                 MemoryRepository(applicationContext).bank.first(),
                             )
+                        }.onFailure { error ->
+                            Log.w(TAG, "Could not sync the automatically activated profile", error)
                         }
                     }
+                    Log.i(TAG, "$placeId ${transition.name}: ${result.type}")
                     SmartProfileNotification.show(
                         applicationContext,
                         result,
@@ -57,5 +64,9 @@ class SmartPlaceGeofenceReceiver : BroadcastReceiver() {
                 pending.finish()
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "QuietCuePlaces"
     }
 }

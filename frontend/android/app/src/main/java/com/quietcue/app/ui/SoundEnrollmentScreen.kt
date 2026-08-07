@@ -1,10 +1,6 @@
 package com.quietcue.app.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -40,12 +36,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import com.quietcue.app.domain.AcousticFingerprint
 import com.quietcue.app.domain.AlertPriority
 import com.quietcue.app.domain.CapturedFingerprint
+import com.quietcue.app.domain.EnrollmentCapture
 import com.quietcue.app.domain.SoundDefinition
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -53,23 +48,13 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SoundEnrollmentScreen(
-    recordFingerprint: suspend () -> CapturedFingerprint,
+    recordSession: suspend (Int) -> EnrollmentCapture,
     initialName: String = "",
     initialDescription: String = "",
     onBack: () -> Unit,
     onEnroll: (SoundDefinition) -> Unit,
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var hasPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                PackageManager.PERMISSION_GRANTED,
-        )
-    }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        hasPermission = it
-    }
     var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
     var description by rememberSaveable(initialDescription) { mutableStateOf(initialDescription) }
     var priorityName by rememberSaveable { mutableStateOf(AlertPriority.ATTENTION.name) }
@@ -78,18 +63,15 @@ fun SoundEnrollmentScreen(
     var background by remember { mutableStateOf<CapturedFingerprint?>(null) }
     val confusingSounds = remember { mutableStateListOf<CapturedFingerprint>() }
     var testResult by remember { mutableStateOf<String?>(null) }
+    var captureSummary by remember { mutableStateOf<String?>(null) }
     var recordingLabel by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    fun capture(label: String, onCaptured: (CapturedFingerprint) -> Unit) {
-        if (!hasPermission) {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
+    fun capture(label: String, durationMs: Int, onCaptured: (EnrollmentCapture) -> Unit) {
         scope.launch {
             recordingLabel = label
             error = null
-            runCatching { recordFingerprint() }
+            runCatching { recordSession(durationMs) }
                 .onSuccess(onCaptured)
                 .onFailure { error = it.message ?: "Recording failed" }
             recordingLabel = null
@@ -121,7 +103,7 @@ fun SoundEnrollmentScreen(
         ) {
             item {
                 Text(
-                    "Record at least 3 examples; 6–10 varied examples are recommended. You can add up to 30. QuietCue keeps only acoustic fingerprints—not raw audio.",
+                    "Tap once, then play the same sound 4–6 times with a short pause between repeats. QuietCue listens through the Arduino microphone, groups matching repeats, ignores speech and incidental sounds, and immediately discards raw audio.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -164,7 +146,7 @@ fun SoundEnrollmentScreen(
                             Icon(Icons.Rounded.GraphicEq, contentDescription = null)
                             Text("Sound examples", style = MaterialTheme.typography.titleLarge)
                         }
-                        Text("Vary distance, angle, and normal room noise. Try nearby, across the room, and partly muffled examples.")
+                        Text("Keep normal room noise present, but do not talk during teaching. Vary the sound's distance or angle between repeats.")
                         positives.forEachIndexed { index, sample ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("✓ Example ${index + 1}: ${sample.rmsDbfs.roundToInt()} dBFS")
@@ -174,17 +156,24 @@ fun SoundEnrollmentScreen(
                         if (positives.size in AcousticFingerprint.MIN_POSITIVE_SAMPLES until AcousticFingerprint.RECOMMENDED_POSITIVE_SAMPLES) {
                             Text("Usable, but add ${AcousticFingerprint.RECOMMENDED_POSITIVE_SAMPLES - positives.size} more varied example(s) for better coverage.")
                         }
-                        if (positives.indices.any { right ->
-                                (0 until right).any { left ->
-                                    AcousticFingerprint.similarity(positives[left].features, positives[right].features) > 0.995f
-                                }
-                            }
-                        ) {
-                            Text("Some examples are nearly identical. Record from another distance, angle, or noise condition.", color = MaterialTheme.colorScheme.error)
-                        }
+                        captureSummary?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
                         Button(
                             onClick = {
-                                capture("Recording example ${positives.size + 1}") { sample -> positives += sample }
+                                capture("Listening for repeated sounds", 10_000) { session ->
+                                    val room = AcousticFingerprint.MAX_POSITIVE_SAMPLES - positives.size
+                                    positives.addAll(session.positives.take(room))
+                                    background = session.background
+                                    captureSummary = buildString {
+                                        append("Found ${session.positives.size} sound repeat(s) and calibrated the room")
+                                        if (session.speechRejectedMs > 0) {
+                                            append("; ignored ${session.speechRejectedMs / 1_000.0} seconds of speech")
+                                        }
+                                        append(".")
+                                    }
+                                    if (session.positives.isEmpty()) {
+                                        error = "No clear sound was found. Move it closer to the Arduino microphone and leave a short pause between repeats."
+                                    }
+                                }
                             },
                             enabled = recordingLabel == null && positives.size < AcousticFingerprint.MAX_POSITIVE_SAMPLES,
                             modifier = Modifier.fillMaxWidth(),
@@ -192,7 +181,8 @@ fun SoundEnrollmentScreen(
                             Icon(Icons.Rounded.Mic, contentDescription = null)
                             Text(
                                 if (recordingLabel != null) " ${recordingLabel}…"
-                                else " Add 2-second example ${positives.size + 1}",
+                                else if (positives.isEmpty()) " Start 10-second guided capture"
+                                else " Add another guided capture",
                             )
                         }
                     }
@@ -201,17 +191,10 @@ fun SoundEnrollmentScreen(
             item {
                 Card {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Background calibration", style = MaterialTheme.typography.titleLarge)
-                        Text("Record the same space without playing the sound. This helps reject false alerts.")
-                        background?.let { Text("✓ Background: ${it.rmsDbfs.roundToInt()} dBFS") }
-                        OutlinedButton(
-                            onClick = { capture("Recording background") { background = it } },
-                            enabled = recordingLabel == null,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Rounded.Mic, contentDescription = null)
-                            Text(if (background == null) " Record background" else " Replace background")
-                        }
+                        Text("Automatic background calibration", style = MaterialTheme.typography.titleLarge)
+                        Text("QuietCue uses the quietest part of each guided session as the room baseline.")
+                        background?.let { Text("✓ Room baseline: ${it.rmsDbfs.roundToInt()} dBFS") }
+                            ?: Text("The baseline will be captured with your first teaching session.")
                     }
                 }
             }
@@ -227,7 +210,14 @@ fun SoundEnrollmentScreen(
                             }
                         }
                         OutlinedButton(
-                            onClick = { capture("Recording non-match") { confusingSounds += it } },
+                            onClick = {
+                                capture("Listening for non-matches", 4_000) { session ->
+                                    confusingSounds.addAll(session.positives.take(10 - confusingSounds.size))
+                                    if (session.positives.isEmpty()) {
+                                        error = "No clear non-match was found. Play it closer to the Arduino microphone."
+                                    }
+                                }
+                            },
                             enabled = recordingLabel == null && confusingSounds.size < 10,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Add confusing sound") }
@@ -241,21 +231,31 @@ fun SoundEnrollmentScreen(
                         Text("Play the enrolled sound again to check whether the current examples recognize it.")
                         OutlinedButton(
                             onClick = {
-                                capture("Testing sound") { sample ->
-                                    val best = positives.maxOfOrNull {
-                                        AcousticFingerprint.similarity(sample.features, it.features)
+                                capture("Listening for the test sound", 4_000) { session ->
+                                    val draftEnrollment = runCatching {
+                                        AcousticFingerprint.enroll(
+                                            name = name.ifBlank { "Test sound" },
+                                            description = description,
+                                            priority = priority,
+                                            positives = positives,
+                                            background = requireNotNull(background),
+                                            confusingSounds = confusingSounds,
+                                        ).enrollment
+                                    }.getOrNull()
+                                    val rawBest = session.positives.maxOfOrNull { sample ->
+                                        positives.maxOfOrNull { example ->
+                                            AcousticFingerprint.similarity(sample.features, example.features)
+                                        } ?: 0f
                                     } ?: 0f
-                                    val negatives = listOfNotNull(background) + confusingSounds
-                                    val negativeSimilarity = negatives.maxOfOrNull { negative ->
-                                        positives.maxOf { positive ->
-                                            AcousticFingerprint.similarity(positive.features, negative.features)
-                                        }
-                                    } ?: 0f
-                                    val threshold = maxOf(0.80f, negativeSimilarity + 0.04f).coerceAtMost(0.95f)
-                                    testResult = if (best >= threshold) {
-                                        "Match ${(best * 100).roundToInt()}%"
+                                    val matched = draftEnrollment?.let { enrollment ->
+                                        session.positives.mapNotNull { sample ->
+                                            AcousticFingerprint.matchConfidence(sample.features, enrollment)
+                                        }.maxOrNull()
+                                    }
+                                    testResult = if (matched != null) {
+                                        "Match ${(matched * 100).roundToInt()}% across multiple examples"
                                     } else {
-                                        "No match ${(best * 100).roundToInt()}% (needs ${(threshold * 100).roundToInt()}%) — add a varied example"
+                                        "No reliable match ${(rawBest * 100).roundToInt()}% — add another clean repeat"
                                     }
                                 }
                             },

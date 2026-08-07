@@ -75,6 +75,21 @@ class SmartProfileRepository(private val context: Context) {
             } else {
                 "This place will ask before switching"
             },
+            // Turning this switch on is an explicit instruction. Do not leave
+            // a prior manual profile choice silently blocking it for hours,
+            // and allow an immediate foreground location reconciliation.
+            manualOverrideUntilEpochMs = if (enabled) 0L else state.manualOverrideUntilEpochMs,
+            suggestion = state.suggestion?.takeUnless { enabled && it.placeId == placeId },
+            lastTransitionKey = state.lastTransitionKey?.takeUnless {
+                enabled && it.startsWith("$placeId:")
+            },
+            lastTransitionAtEpochMs = if (
+                enabled && state.lastTransitionKey?.startsWith("$placeId:") == true
+            ) {
+                0L
+            } else {
+                state.lastTransitionAtEpochMs
+            },
         )
     }
 

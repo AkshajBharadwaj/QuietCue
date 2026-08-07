@@ -4,4 +4,5 @@
     <string name="alert_notification_channel_name">QuietCue alerts</string>
     <string name="alert_notification_channel_description">Notifications for detected alerts from the QuietCue hub</string>
     <string name="alert_notification_title">%1$s detected</string>
+    <string name="alert_notification_stop_action">Acknowledge &amp; stop</string>
 </resources>

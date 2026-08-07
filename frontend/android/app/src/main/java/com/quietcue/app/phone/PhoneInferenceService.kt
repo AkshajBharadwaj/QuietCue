@@ -10,6 +10,9 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.quietcue.app.R
+import com.quietcue.app.data.AlertNotificationManager
+import com.quietcue.app.data.AlertNotificationTracker
+import com.quietcue.app.data.AlertRepository
 import com.quietcue.app.data.ProfileRepository
 import com.quietcue.app.data.MemoryRepository
 import com.quietcue.app.domain.AlertProfile
@@ -25,7 +28,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class PhoneInferenceService : Service() {
@@ -33,6 +38,8 @@ class PhoneInferenceService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeProfile = AtomicReference<AlertProfile>(ProfileDefaults.all().first())
     private val memoryBank = AtomicReference(MemoryBank())
+    private val alertRepository = AlertRepository()
+    private val alertTracker = AlertNotificationTracker()
     @Volatile private var classifier: PhoneYamnetClassifier? = null
     @Volatile private var transcriber: PhoneTranscriber? = null
     @Volatile private var server: PhoneInferenceServer? = null
@@ -40,6 +47,9 @@ class PhoneInferenceService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        val alertNotifications = AlertNotificationManager(applicationContext)
+        alertNotifications.ensureChannel()
+        alertNotifications.cancelAllAlerts()
         startInForeground("Loading the on-phone sound model")
         val repository = ProfileRepository(applicationContext)
         val memoryRepository = MemoryRepository(applicationContext)
@@ -50,6 +60,22 @@ class PhoneInferenceService : Service() {
         }
         scope.launch {
             memoryRepository.bank.collectLatest(memoryBank::set)
+        }
+        scope.launch {
+            while (isActive) {
+                runCatching { alertRepository.fetchState() }
+                    .onSuccess { state ->
+                        alertTracker.consumeChange(state.latestAlert)?.let { change ->
+                            change.previousEventId?.let(alertNotifications::cancel)
+                            if (change.shouldCancel) {
+                                alertNotifications.cancel(change.alert.eventId)
+                            } else {
+                                alertNotifications.notify(change.alert)
+                            }
+                        }
+                    }
+                delay(ALERT_POLL_INTERVAL_MS)
+            }
         }
         executor.execute {
             try {
@@ -142,5 +168,6 @@ class PhoneInferenceService : Service() {
         private const val NOTIFICATION_ID = 2101
         private const val PREFERENCES = "quietcue_inference"
         private const val PAIRING_TOKEN = "pairing_token"
+        private const val ALERT_POLL_INTERVAL_MS = 1_000L
     }
 }

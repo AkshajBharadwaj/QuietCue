@@ -1,16 +1,15 @@
 package com.quietcue.app.ui
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quietcue.app.data.AlertRepository
 import com.quietcue.app.data.AlertNotificationManager
-import com.quietcue.app.data.AlertNotificationTracker
 import com.quietcue.app.data.MemoryRepository
 import com.quietcue.app.data.OnDeviceNameRecognizer
 import com.quietcue.app.data.ProfileRepository
-import com.quietcue.app.data.PhoneEnrollmentRecorder
 import com.quietcue.app.data.ProfileSyncJsonCodec
 import com.quietcue.app.data.SmartProfileCoordinator
 import com.quietcue.app.data.SmartProfileRepository
@@ -21,7 +20,7 @@ import com.quietcue.app.domain.PersonMemory
 import com.quietcue.app.domain.ProfileCatalog
 import com.quietcue.app.domain.ProfileDefaults
 import com.quietcue.app.domain.RuntimeState
-import com.quietcue.app.domain.CapturedFingerprint
+import com.quietcue.app.domain.EnrollmentCapture
 import com.quietcue.app.domain.SoundDefinition
 import com.quietcue.app.domain.SpeechSettings
 import com.quietcue.app.domain.PlaceTransition
@@ -31,6 +30,7 @@ import com.quietcue.app.domain.UserIdentity
 import com.quietcue.app.location.GeofenceRegistrationStatus
 import com.quietcue.app.location.SmartPlaceGeofenceManager
 import com.quietcue.app.location.SmartPlaceLocationClient
+import com.quietcue.app.location.SmartPlaceLocator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -42,17 +42,14 @@ import kotlinx.coroutines.launch
 class ProfileViewModel(
     private val repository: ProfileRepository,
     private val alertRepository: AlertRepository,
-    private val notificationManager: AlertNotificationManager,
-    private val enrollmentRecorder: PhoneEnrollmentRecorder,
     private val memoryRepository: MemoryRepository,
     private val nameRecognizer: OnDeviceNameRecognizer,
     private val smartRepository: SmartProfileRepository,
     private val smartCoordinator: SmartProfileCoordinator,
     private val geofenceManager: SmartPlaceGeofenceManager,
     private val locationClient: SmartPlaceLocationClient,
+    private val alertNotificationManager: AlertNotificationManager,
 ) : ViewModel() {
-    private val notificationTracker = AlertNotificationTracker()
-
     val catalog: StateFlow<ProfileCatalog> = repository.catalog.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -88,7 +85,6 @@ class ProfileViewModel(
                 runCatching { alertRepository.fetchState() }
                     .onSuccess { state ->
                         _runtimeState.value = state
-                        notificationTracker.consumeIfNew(state.latestAlert)?.let(notificationManager::notify)
                         val currentCatalog = catalog.value
                         val currentMemoryBank = memoryBank.value
                         val payload = runCatching {
@@ -187,7 +183,7 @@ class ProfileViewModel(
                         profileId = profileId,
                     ),
                 )
-                refreshGeofences()
+                refreshPlaceMonitoring()
             }.onSuccess {
                 _message.value = "$name saved; QuietCue will suggest the selected profile here"
             }.onFailure { error ->
@@ -226,7 +222,7 @@ class ProfileViewModel(
         viewModelScope.launch {
             runCatching {
                 smartRepository.deletePlace(placeId)
-                refreshGeofences()
+                refreshPlaceMonitoring()
             }.onSuccess { _message.value = "Place removed" }
                 .onFailure { _message.value = it.message ?: "Could not remove the place" }
         }
@@ -236,6 +232,7 @@ class ProfileViewModel(
         if (enabled) "Automatic switching enabled" else "Profile suggestions enabled",
     ) {
         smartRepository.setAutoApply(placeId, enabled)
+        refreshPlaceMonitoring()
     }
 
     fun simulateSmartPlace(placeId: String, transition: PlaceTransition) {
@@ -272,7 +269,7 @@ class ProfileViewModel(
 
     fun refreshSmartPlaces(showMessage: Boolean = false) {
         viewModelScope.launch {
-            runCatching { refreshGeofences() }
+            runCatching { refreshPlaceMonitoring() }
                 .onSuccess { status ->
                     if (showMessage) {
                         _message.value = when (status) {
@@ -288,8 +285,8 @@ class ProfileViewModel(
         }
     }
 
-    suspend fun recordEnrollmentFingerprint(): CapturedFingerprint =
-        enrollmentRecorder.recordFingerprint()
+    suspend fun captureEnrollmentSession(durationMs: Int): EnrollmentCapture =
+        alertRepository.captureEnrollmentSession(durationMs)
 
     suspend fun recognizeNameSample(): String = nameRecognizer.recognize()
 
@@ -303,6 +300,7 @@ class ProfileViewModel(
         viewModelScope.launch {
             runCatching { alertRepository.stopHaptic(eventId) }
                 .onSuccess {
+                    alertNotificationManager.cancel(eventId)
                     _runtimeState.value = runCatching { alertRepository.fetchState() }
                         .getOrElse { _runtimeState.value.copy(stopInProgress = false) }
                     _message.value = "Vibration stopped"
@@ -324,8 +322,39 @@ class ProfileViewModel(
 
     private suspend fun refreshGeofences(): GeofenceRegistrationStatus = runCatching {
         geofenceManager.refresh()
+    }.onFailure {
+        Log.w(TAG, "Could not register smart place geofences", it)
     }.getOrDefault(GeofenceRegistrationStatus.REGISTRATION_FAILED).also {
         _geofenceStatus.value = it
+    }
+
+    private suspend fun refreshPlaceMonitoring(): GeofenceRegistrationStatus {
+        val status = refreshGeofences()
+        if (status == GeofenceRegistrationStatus.ACTIVE) {
+            runCatching { reconcileCurrentPlace() }
+                .onFailure { Log.w(TAG, "Could not reconcile current smart place", it) }
+        }
+        return status
+    }
+
+    private suspend fun reconcileCurrentPlace() {
+        val state = smartRepository.current()
+        val realPlaces = state.places.filter { it.enabled && !it.demoOnly }
+        if (realPlaces.isEmpty()) return
+        val location = locationClient.captureCurrentLocation()
+        val currentPlace = SmartPlaceLocator.containingPlace(
+            realPlaces,
+            location.latitude,
+            location.longitude,
+        )
+        state.activePlaceId?.takeIf { it != currentPlace?.id }?.let { activePlaceId ->
+            val result = smartCoordinator.handleTransition(activePlaceId, PlaceTransition.EXIT)
+            Log.i(TAG, "Foreground $activePlaceId EXIT: ${result.type}")
+        }
+        if (currentPlace != null && smartRepository.current().activePlaceId != currentPlace.id) {
+            val result = smartCoordinator.handleTransition(currentPlace.id, PlaceTransition.ENTER)
+            Log.i(TAG, "Foreground ${currentPlace.id} ENTER: ${result.type}")
+        }
     }
 
     companion object {
@@ -338,18 +367,18 @@ class ProfileViewModel(
                 return ProfileViewModel(
                     profileRepository,
                     AlertRepository(),
-                    AlertNotificationManager(context.applicationContext),
-                    PhoneEnrollmentRecorder(),
                     MemoryRepository(context.applicationContext),
                     OnDeviceNameRecognizer(context.applicationContext),
                     smartRepository,
                     SmartProfileCoordinator(profileRepository, smartRepository),
                     SmartPlaceGeofenceManager(context.applicationContext, smartRepository),
                     SmartPlaceLocationClient(context.applicationContext),
+                    AlertNotificationManager(context.applicationContext),
                 ) as T
             }
         }
 
         private const val DEMO_PLACE_ID = "demo-hackathon-venue"
+        private const val TAG = "QuietCuePlaces"
     }
 }

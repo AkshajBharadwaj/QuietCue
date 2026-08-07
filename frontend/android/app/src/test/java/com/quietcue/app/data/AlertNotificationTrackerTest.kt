@@ -3,6 +3,9 @@ package com.quietcue.app.data
 import com.quietcue.app.domain.DetectedAlert
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AlertNotificationTrackerTest {
@@ -24,6 +27,31 @@ class AlertNotificationTrackerTest {
 
         assertSame(first, tracker.consumeIfNew(first))
         assertSame(second, tracker.consumeIfNew(second))
+    }
+
+    @Test
+    fun `new alert identifies the previous notification to cancel`() {
+        val tracker = AlertNotificationTracker()
+        tracker.consumeChange(sampleAlert("evt-1"))
+
+        val change = tracker.consumeChange(sampleAlert("evt-2"))
+
+        assertEquals("evt-1", change?.previousEventId)
+        assertFalse(change?.shouldCancel == true)
+    }
+
+    @Test
+    fun `acknowledgement state change cancels the ongoing notification`() {
+        val tracker = AlertNotificationTracker()
+        val active = sampleAlert("evt-1").copy(hapticActive = true)
+        tracker.consumeChange(active)
+
+        val change = tracker.consumeChange(
+            active.copy(hapticActive = false, acknowledgedAtMs = 123L),
+        )
+
+        assertTrue(change?.shouldCancel == true)
+        assertNull(tracker.consumeChange(change?.alert))
     }
 
     private fun sampleAlert(eventId: String) = DetectedAlert(

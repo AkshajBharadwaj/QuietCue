@@ -3,11 +3,14 @@ package com.quietcue.app.data
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.quietcue.app.MainActivity
 import com.quietcue.app.R
 import com.quietcue.app.domain.DetectedAlert
 
@@ -48,12 +51,21 @@ class AlertNotificationManager(private val context: Context) {
         val contentText = buildContentText(alert)
         val style = NotificationCompat.BigTextStyle()
             .bigText(contentText)
+        val contentIntent = PendingIntent.getActivity(
+            context,
+            0,
+            Intent(context, MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            ),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle(contentTitle)
             .setContentText(contentText)
             .setStyle(style)
+            .setContentIntent(contentIntent)
             .setCategory(
                 if (alert.requiresAcknowledgement || alert.category == "emergency") {
                     NotificationCompat.CATEGORY_ALARM
@@ -68,12 +80,40 @@ class AlertNotificationManager(private val context: Context) {
                     NotificationCompat.PRIORITY_DEFAULT
                 },
             )
-            .setAutoCancel(true)
+            .setAutoCancel(!alert.hapticActive)
+            .setOngoing(alert.hapticActive)
             .setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .build()
 
-        notificationManager.notify(alert.notificationId(), notification)
+        if (alert.hapticActive) {
+            val stopIntent = Intent(context, AlertAcknowledgeReceiver::class.java)
+                .setAction(AlertAcknowledgeReceiver.ACTION_STOP_HAPTIC)
+                .putExtra(AlertAcknowledgeReceiver.EXTRA_EVENT_ID, alert.eventId)
+            val stopPendingIntent = PendingIntent.getBroadcast(
+                context,
+                notificationId(alert.eventId),
+                stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            builder.addAction(
+                R.drawable.ic_launcher,
+                context.getString(R.string.alert_notification_stop_action),
+                stopPendingIntent,
+            )
+        }
+
+        notificationManager.notify(notificationId(alert.eventId), builder.build())
+    }
+
+    fun cancel(eventId: String) {
+        notificationManager.cancel(notificationId(eventId))
+    }
+
+    fun cancelAllAlerts() {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        manager.activeNotifications
+            .filter { it.notification.channelId == CHANNEL_ID }
+            .forEach { manager.cancel(it.id) }
     }
 
     private fun buildContentText(alert: DetectedAlert): String {
@@ -86,9 +126,9 @@ class AlertNotificationManager(private val context: Context) {
         return "$urgency alert in ${alert.profileName} • $confidence% confidence • ${alert.totalLatencyMs} ms"
     }
 
-    private fun DetectedAlert.notificationId(): Int = eventId.hashCode()
-
     companion object {
         const val CHANNEL_ID = "quietcue_alerts"
+
+        fun notificationId(eventId: String): Int = eventId.hashCode()
     }
 }

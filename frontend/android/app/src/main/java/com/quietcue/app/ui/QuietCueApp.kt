@@ -94,7 +94,7 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
 
     if (creationFlow == CreationFlow.SOUND_ENROLLMENT) {
         SoundEnrollmentScreen(
-            recordFingerprint = viewModel::recordEnrollmentFingerprint,
+            recordSession = viewModel::captureEnrollmentSession,
             initialName = enrollmentSuggestedName,
             initialDescription = enrollmentSuggestedName.takeIf(String::isNotBlank)?.let {
                 "Recurring sound QuietCue classified as $it"

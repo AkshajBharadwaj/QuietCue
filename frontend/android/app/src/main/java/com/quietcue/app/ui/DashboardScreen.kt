@@ -259,7 +259,15 @@ fun DashboardScreen(
                                     onClick = { onStopHaptic(alert.eventId) },
                                     enabled = !runtimeState.stopInProgress && runtimeState.backendConnected,
                                 ) {
-                                    Text(if (runtimeState.stopInProgress) "Stopping…" else "Stop vibration")
+                                    Text(
+                                        if (runtimeState.stopInProgress) {
+                                            "Stopping…"
+                                        } else if (alert.requiresAcknowledgement) {
+                                            "Acknowledge & stop vibration"
+                                        } else {
+                                            "Stop vibration"
+                                        },
+                                    )
                                 }
                             } else if (alert.acknowledgedAtMs != null) {
                                 Text(

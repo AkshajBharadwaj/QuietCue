@@ -33,7 +33,7 @@ static const uint8_t PIN_MOTOR = 6;       // PWM-capable output to the MOSFET ga
 static const uint8_t PIN_BUTTON = 2;      // Acknowledge button to GND, uses INPUT_PULLUP.
 static const uint8_t PIN_STATUS_LED = 4;  // Status LED through a ~220 ohm resistor.
 
-static const char FIRMWARE_VERSION[] = "quietcue-haptics/0.3.0";
+static const char FIRMWARE_VERSION[] = "quietcue-haptics/0.4.1";
 
 // A pattern is a fixed sequence of motor on/off steps; the whole sequence may
 // repeat. The final off time of a sequence doubles as the gap before the next
@@ -128,6 +128,7 @@ static void stopPattern() {
   haptic.steps = nullptr;
   haptic.step_count = 0;
   haptic.step_index = 0;
+  haptic.cycles_remaining = 0;
   haptic.pattern_deadline_ms = 0;
   motorWrite(false);
 }
@@ -168,7 +169,10 @@ static bool startPattern(HapticPattern pattern, int intensity, int repeat_count)
       }
       steps = custom_steps;
       step_count = custom_step_count;
-      cycles = clampRepeat(repeat_count);
+      // A zero repeat count is used for acknowledgement-required custom
+      // emergency cues, matching urgent_repeat semantics.
+      cycles = repeat_count > 0 ? clampRepeat(repeat_count) : -1;
+      deadline = cycles < 0 ? now + URGENT_TIMEOUT_MS : 0;
       break;
     case PATTERN_URGENT_REPEAT:
       steps = URGENT_STEPS;
@@ -241,7 +245,7 @@ static void updateButton(uint32_t now) {
   }
   if ((now - button_change_ms) >= BUTTON_DEBOUNCE_MS && raw != button_pressed) {
     button_pressed = raw;
-    if (button_pressed && haptic.pattern == PATTERN_URGENT_REPEAT) {
+    if (button_pressed && haptic.cycles_remaining < 0) {
       last_ack_ms = now;
       stopPattern();
       // Fire-and-forget event so the Linux side can clear the alert promptly.
@@ -257,7 +261,7 @@ static void updateStatusLed(uint32_t now) {
   // Finite patterns illuminate the LED only while their state is active, so
   // the LED always turns off when the motor sequence completes.
   bool led = manual_led_state || haptic.pattern != PATTERN_NONE;
-  if (haptic.pattern == PATTERN_URGENT_REPEAT) {
+  if (haptic.cycles_remaining < 0) {
     led = (now / URGENT_LED_BLINK_MS) % 2 == 0;
   }
   digitalWrite(PIN_STATUS_LED, led ? HIGH : LOW);
@@ -300,7 +304,7 @@ bool play_haptic(String pattern, int intensity, int repeat_count) {
   }
   // An active emergency pattern is only replaced by another emergency; lower
   // priority requests are refused until it is acknowledged or times out.
-  if (haptic.pattern == PATTERN_URGENT_REPEAT && requested != PATTERN_URGENT_REPEAT) {
+  if (haptic.cycles_remaining < 0 && requested != PATTERN_URGENT_REPEAT) {
     return false;
   }
   return startPattern(requested, intensity, repeat_count);
@@ -331,8 +335,10 @@ static bool parseCustomPhase(
 }
 
 bool play_custom_haptic(String encoded_steps, int intensity, int repeat_count) {
-  // Custom cues are finite and cannot interrupt an active emergency pattern.
-  if (haptic.pattern == PATTERN_URGENT_REPEAT ||
+  // The Linux dispatcher explicitly stops an old emergency before replacing
+  // it with a custom emergency. All other custom cues are refused while an
+  // acknowledgement-required pattern is active.
+  if (haptic.cycles_remaining < 0 ||
       encoded_steps.length() == 0 || encoded_steps.length() > 79) {
     return false;
   }

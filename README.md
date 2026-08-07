@@ -107,8 +107,8 @@ display the alert on an attached Android phone, change profiles, or substitute a
 real prerecorded sound for the synthetic fixture.
 
 The Android companion can also create a reviewable profile draft from a natural-
-language situation description and enroll a user-specific sound with three phone-
-microphone examples plus background calibration. See
+language situation description and teach a user-specific sound in one guided
+session using the same Uno Q microphone used for live detection. See
 [`docs/PROFILE_AGENT_AND_ENROLLMENT.md`](docs/PROFILE_AGENT_AND_ENROLLMENT.md).
 
 The **My context** tab adds a private, manually controlled identity and context

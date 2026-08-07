@@ -25,26 +25,28 @@ From the Profiles tab, choose **Enroll a sound**:
 
 1. Name and describe the sound.
 2. Choose informational, attention, or emergency urgency.
-3. Record at least three two-second examples. Six to ten examples varied by
-   distance, angle, and normal room noise are recommended; enrollment retains up
-   to 30 examples.
-4. Record the room without the target sound and optionally add up to ten similar
-   sounds that should not trigger the alert.
-5. Remove weak or duplicate examples and run the pre-save recognition test.
+3. Start one ten-second guided capture, then play the sound three to six times
+   with a short pause between repeats. Vary distance or angle and do not talk.
+4. QuietCue uses the live Uno Q microphone, automatically separates repeated
+   events, rejects speech-dominated chunks, and derives the room baseline from
+   quiet portions of the same session.
+5. Optionally record a four-second similar sound that should not trigger the
+   alert, then run the four-second pre-save recognition test.
 6. QuietCue checks volume and rejects enrollment when a negative example cannot
    be safely separated from the target examples.
 7. Review the resulting sound rule in the active profile.
 
-The phone records 16 kHz mono PCM only for the duration of each explicit capture.
-It extracts an eight-component normalized spectral fingerprint in memory and then
-discards the PCM. The saved catalog contains the retained fingerprints, calibrated threshold,
-sample count, matcher version, and event metadata—never raw audio.
+The hub collects bounded 16 kHz mono PCM from the Uno Q only during explicit
+teaching. It extracts eight-component normalized spectral fingerprints in memory
+and immediately discards the PCM. The saved catalog contains retained fingerprints,
+the calibrated threshold, sample count, matcher version, and event metadata—never
+raw audio.
 
 The active Android profile synchronizes to the local hub over the development
 state API. The hub validates all fields and prototypes before replacing its active
-profile. Each incoming audio chunk is compared with enabled enrolled prototypes;
-a match enters the same threshold, quiet-hours, cooldown, telemetry, and haptic
-decision pipeline as built-in events.
+profile. Each incoming non-speech audio chunk is compared with enabled enrolled
+prototypes; a match enters the same threshold, quiet-hours, cooldown, telemetry,
+and haptic decision pipeline as built-in events.
 
 ## Current safety boundary
 
