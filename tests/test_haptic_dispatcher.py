@@ -116,6 +116,58 @@ class AlertDispatcherTest(unittest.TestCase):
             self.transport.calls,
         )
 
+    def test_custom_pattern_replaces_stale_default_for_same_emergency(self) -> None:
+        first = self.dispatcher.dispatch(
+            _alert(
+                event="fire_alarm",
+                category="emergency",
+                pattern="urgent_repeat",
+                requires_ack=True,
+            )
+        )
+        self.clock.advance(3.0)
+
+        replacement = self.dispatcher.dispatch(
+            _alert(
+                event="fire_alarm",
+                category="emergency",
+                pattern="custom",
+                custom_pattern="200,100;500,200",
+                requires_ack=True,
+            )
+        )
+
+        self.assertTrue(first.delivered)
+        self.assertTrue(replacement.delivered)
+        self.assertIn(("stop_haptic",), self.transport.calls)
+        self.assertIn(
+            ("play_custom_haptic", "200,100;500,200", 255, 0),
+            self.transport.calls,
+        )
+
+    def test_custom_pattern_does_not_interrupt_different_emergency(self) -> None:
+        self.dispatcher.dispatch(
+            _alert(
+                event="fire_alarm",
+                category="emergency",
+                pattern="urgent_repeat",
+                requires_ack=True,
+            )
+        )
+        self.clock.advance(3.0)
+
+        self.dispatcher.dispatch(
+            _alert(
+                event="siren",
+                category="emergency",
+                pattern="custom",
+                custom_pattern="200,100;500,200",
+                requires_ack=True,
+            )
+        )
+
+        self.assertNotIn(("stop_haptic",), self.transport.calls)
+
     def test_custom_pattern_without_steps_is_rejected_as_transport_error(self) -> None:
         outcome = self.dispatcher.dispatch(_alert(pattern="custom"))
 

@@ -177,6 +177,17 @@ class AlertDispatcher:
             if plan.pattern == "custom":
                 if not plan.custom_pattern:
                     raise ValueError("custom pattern has no recorded steps")
+                # The STM32 correctly refuses to let an arbitrary custom cue
+                # interrupt an active emergency pattern. A profile edit can,
+                # however, replace the cue for that *same* acknowledged event
+                # while urgent_repeat is still running. Stop only that stale
+                # same-event cue before asking the firmware to play its newly
+                # selected custom replacement.
+                if self._pending_ack_event == event:
+                    stopped = self._transport.stop_haptic()
+                    if stopped is False:
+                        raise RuntimeError("firmware refused to stop the previous same-event pattern")
+                    self._pending_ack_event = None
                 accepted = self._transport.play_custom_haptic(
                     plan.custom_pattern,
                     plan.intensity,

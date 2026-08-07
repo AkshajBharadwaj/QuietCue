@@ -64,6 +64,26 @@ class CustomHapticProfileTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "between 100 and 2000"):
             decode_profile(document)
 
+    def test_fire_alarm_custom_pattern_is_not_replaced_by_emergency_default(self) -> None:
+        document = _custom_profile_document()
+        rule = document["sound_rules"][0]  # type: ignore[index]
+        rule["event"] = "fire_alarm"  # type: ignore[index]
+        rule["category"] = "emergency"  # type: ignore[index]
+        rule["strength"] = "strong"  # type: ignore[index]
+        rule["requires_ack"] = True  # type: ignore[index]
+        profile = decode_profile(document)
+
+        decisions = ProfileDecisionEngine(profile).decide(
+            (ConfirmedEvent("fire_alarm", 0.95, "Fire alarm", "emergency", "urgent_repeat", True),),
+            captured_at_ms=1_000,
+            source_sequence=5,
+            now_ms=1_050,
+        )
+
+        alert = decisions.alerts[0].to_wire()
+        self.assertEqual("custom", alert["pattern"])
+        self.assertEqual("420,180;650,200", alert["custom_pattern"])
+
 
 if __name__ == "__main__":
     unittest.main()
