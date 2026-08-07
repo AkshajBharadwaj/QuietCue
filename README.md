@@ -1,253 +1,264 @@
 # QuietCue
 
-QuietCue is an AI-assisted accessibility system that turns important environmental
-sounds into clear haptic alerts for deaf and hard-of-hearing users.
+**An open-source haptic awareness system for deaf and hard-of-hearing people.**
 
-It captures audio at an Arduino Uno Q, performs local environmental-sound and
-optional speech inference on a Copilot+ PC or compatible Android phone, applies
-the user's active profile, and returns an urgency-coded vibration command to the
-wearable. The core alert path does not require a cloud service.
+QuietCue recognizes important sounds and spoken cues, decides what matters in
+the user's current context, and turns each alert into a clear vibration on an
+Arduino Uno Q wearable. The core experience runs locally on Qualcomm hardware:
+no cloud connection, account, or subscription is required.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system diagram and
-current implementation status, and [`docs/DEMO.md`](docs/DEMO.md) for the
-3-minute demo runbook.
+**Snapdragon Multiverse Hackathon 2026** · Qualcomm and Arduino
 
-## Install from scratch on a Copilot+ PC
+| | |
+|---|---|
+| **Local by default** | Environmental and speech inference stay on the connected Copilot+ PC or Android phone |
+| **1.45 ms mean inference** | Measured full fp32 YAMNet path on the Snapdragon X Elite Hexagon NPU |
+| **Context-aware** | Five built-in profiles, quiet hours, Smart Places, custom sounds, and name detection |
+| **Open source** | Android app, inference hub, Uno Q client, STM32 haptics, tests, and documentation under MIT |
 
-### Prerequisites
+---
 
-- Windows 11 on the target Copilot+ PC.
-- [Git](https://git-scm.com/download/win).
-- Python 3.10 or newer available as `python` (Python 3.13 is supported).
-- Optional connected demo: an Arduino Uno Q, USB/ALSA microphone, safely driven
-  vibration motor, and Android 8.0+ device. The software-only verification below
-  needs none of these.
+## App preview
 
-Open PowerShell and clone the personal repository:
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/app-alert.png" alt="QuietCue dashboard showing a detected fire alarm, confidence, latency, priority, profile, and acknowledge action" />
+      <br /><strong>Actionable alerts</strong><br />Event, confidence, urgency, profile, latency, haptic delivery, and acknowledgement in one view.
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/app-profile-customization.png" alt="QuietCue Home profile editor with icon and color customization" />
+      <br /><strong>Personal profiles</strong><br />Create a recognizable profile with its own purpose, icon, color, context, and behavior.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/app-sound-rules.png" alt="QuietCue sound rules for fire alarms, doorbells, and car horns" />
+      <br /><strong>Sound-by-sound control</strong><br />Enable each event and tune its sensitivity, priority, haptic cue, strength, cooldown, and acknowledgement.
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/app-smart-places.png" alt="QuietCue Smart Places screen for private location-based profile suggestions" />
+      <br /><strong>Private Smart Places</strong><br />Suggest the right profile on arrival and switch back on departure while coordinates remain on the phone.
+    </td>
+  </tr>
+</table>
 
-```powershell
-git clone https://github.com/AkshajBharadwaj/quietcue.git
-cd quietcue
-python --version
+## Why QuietCue exists
+
+Many safety and social cues are designed to be heard: a smoke alarm, car horn,
+doorbell, crying baby, ringing phone, kitchen timer, or someone calling your
+name. Phone notifications can help, but only after the user notices and reads
+the screen. A single generic vibration also does not communicate whether an
+event is informational, needs attention, or is urgent.
+
+QuietCue creates a small, learnable haptic language. It identifies the event,
+applies the user's profile and preferences, and sends the wearable only the
+urgency and vibration pattern it needs. The phone shows the exact event and
+technical details; the wearable communicates importance immediately.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Sound near the user"] --> B["Uno Q microphone"]
+    B -->|"16 kHz PCM over Wi-Fi"| C["Copilot+ PC or Android hub"]
+    C --> D["Environmental + gated speech inference"]
+    D --> E["Active profile, threshold, and priority rules"]
+    E -->|"compact alert command"| F["Uno Q + STM32"]
+    F --> G["Haptic pattern"]
+    E --> H["Android dashboard and notification"]
+    H -->|"acknowledge or stop"| F
 ```
 
-Verify the complete software path with no downloads or third-party Python
-packages:
+1. A USB microphone connected to the Uno Q captures mono audio without saving
+   raw recordings.
+2. The Uno Q streams short PCM chunks over Wi-Fi to one selected inference hub:
+   the Copilot+ PC or the Android companion.
+3. YAMNet classifies environmental audio continuously. Speech transcription is
+   gated and runs only when voice activity and the active profile require it.
+4. QuietCue applies confidence thresholds, quiet hours, cooldowns, custom sound
+   matches, and the active Home, Work, Driving, Sleep, or Emergency profile.
+5. Approved alerts return as small semantic commands such as `urgent_repeat`;
+   raw audio never travels back to the wearable.
+6. The STM32 owns precise motor timing while the app shows the event, confidence,
+   active profile, latency, connection state, and confirmed delivery status.
 
-```powershell
-python scripts\run_no_hardware_demo.py --event fire_alarm --profile home
-python scripts\run_no_hardware_demo.py --event doorbell_knock --profile sleep
+If the network drops, the Uno Q client reconnects with bounded backoff and never
+guesses at a safety-critical event. The deterministic motor controller can
+finish an alert pattern that has already been delivered.
+
+## A haptic language, not a vibration for every sound
+
+| Category | Default cue | Meaning |
+|---|---|---|
+| **Emergency** | Repeated urgent pulses | Act now; continues until acknowledged or timed out |
+| **Attention** | One longer pulse | Check the app soon |
+| **Informational** | Two short pulses | Something happened; check the phone for details |
+
+Users can adjust strength, acknowledgement, cooldowns, and patterns per sound.
+The touch-driven pattern creator records one to six pulses directly on the
+phone, previews them, validates safe timing bounds, and synchronizes the result
+to the hub and wearable.
+
+## The Android companion
+
+The native Android app is the control center for QuietCue:
+
+- **Dashboard:** active profile, PC/phone inference selection, Uno Q connection,
+  latest event, confidence, latency, and hardware-confirmed haptic delivery.
+- **Profiles:** Home, Work / School, Driving / Transit, Sleep / Night, Emergency,
+  and custom profiles with per-sound rules and quiet hours.
+- **Custom sound teaching:** a guided ten-second session learns a repeated sound
+  from the live Uno Q microphone, rejects speech-dominated samples, and discards
+  raw audio after extracting local fingerprints.
+- **My Context:** encrypted, user-entered names, pronunciations, people, phrases,
+  and contextual hints for local name recognition. QuietCue never invents
+  memories from background conversations.
+- **Smart Places:** private on-phone geofences can suggest or automatically apply
+  a profile at Home, Work, or School while protecting recent manual choices.
+- **Actionable notifications:** emergency alerts can be acknowledged or stopped
+  from the app or notification action.
+
+The phone can also become the environmental inference hub using the checked-in
+W8A8 YAMNet ONNX model. The user can switch between Samsung and PC inference
+without restarting the Uno Q stream; the PC remains the automatic fallback if
+the phone disconnects.
+
+## Edge AI on the Qualcomm stack
+
+| Component | Role | Runtime |
+|---|---|---|
+| **YAMNet (AudioSet, 521 classes)** | Environmental sound classification | ONNX Runtime QNN on Snapdragon X Elite; ONNX Runtime Android on phone |
+| **Faster-Whisper** | Gated local phrase and name transcription on the PC | CPU worker, separate from environmental inference |
+| **Whisper ONNX** | Optional staged phone speech path | Lazy Android worker |
+| **QUAD** | Conversion, profiling, orchestration, and generated runner validation | Snapdragon X Elite and connected target workflows |
+| **Arduino App Lab Bridge** | Semantic alert delivery from Linux to the STM32 | Uno Q |
+
+### Measured on Snapdragon X Elite
+
+The benchmark covers a complete one-second PCM chunk classification: PCM16 to
+log-mel features, inference, sigmoid, and top results.
+
+| Variant | Provider | Mean | p95 |
+|---|---|---:|---:|
+| fp32 baseline | CPUExecutionProvider | 30.46 ms | 86.72 ms |
+| **fp32 deployed path** | **QNN / Hexagon NPU** | **1.45 ms** | **1.74 ms** |
+| W8A8 | CPUExecutionProvider | 16.20 ms | 74.26 ms |
+| W8A8 | QNN / Hexagon NPU | 1.33 ms | 3.63 ms |
+
+The fp32 NPU path was selected because it preserves reference accuracy and has
+more deterministic tail latency. The 0.5–1 second capture window, not model
+execution, dominates the user-perceived response time. Full methodology and raw
+results are in [`docs/benchmarks/QUAD_AUDIO_MODEL.md`](docs/benchmarks/QUAD_AUDIO_MODEL.md).
+
+## Hardware
+
+| Component | Responsibility |
+|---|---|
+| **Snapdragon X Elite Copilot+ PC** | Primary inference, profile decisions, telemetry, and development dashboard |
+| **Arduino Uno Q Linux side** | Microphone capture, PCM streaming, reconnection, and alert transport |
+| **Uno Q STM32 side** | Deterministic vibration timing, button input, and status control |
+| **Android phone** | Companion UI and optional alternate inference hub |
+| **Vibration motor + driver** | Physical alert output through a MOSFET/transistor and suitable protection circuitry |
+
+The motor must never be powered directly from a GPIO pin. Wiring and board
+deployment guidance are in [`uno_q/stm32/README.md`](uno_q/stm32/README.md) and
+[`docs/UNO_Q_MICROPHONE.md`](docs/UNO_Q_MICROPHONE.md).
+
+## Getting started
+
+### Fast software showcase
+
+Requires Git and Python 3.10 or newer. No model download, phone, or Uno Q is
+needed for this deterministic end-to-end verification.
+
+```bash
+git clone https://github.com/AkshajBharadwaj/QuietCue.git
+cd QuietCue
+
+python3 scripts/run_no_hardware_demo.py --event fire_alarm --profile home
+python3 scripts/run_no_hardware_demo.py --event doorbell_knock --profile sleep
 ```
 
-The first command must report an `urgent_repeat` alert; the second must report
-that Sleep mode suppressed the doorbell. This deterministic mode is a functional
-simulator, not a safety classifier.
+The first command produces an emergency `urgent_repeat` alert. The second shows
+the same pipeline suppressing a doorbell under the Sleep profile.
 
-To run the connected environmental classifier, create the environment and start
-the hub with the checked-in ONNX model:
+### Real classifier on the Copilot+ PC
+
+On Windows PowerShell:
 
 ```powershell
 .\scripts\run_demo.ps1 -Classifier onnx -NoSpeech
 ```
 
-The first run installs `backend/requirements-onnx.txt`. Open
-`http://127.0.0.1:8787/api/state` to inspect device state, profile decisions,
-alerts, delivery status, and latency. On Snapdragon Windows the runtime attempts
-the available QNN/NPU path and safely falls back to ONNX Runtime CPU if that
-provider is unavailable. Stop the hub with Ctrl+C.
+The launcher creates `.venv`, installs `backend/requirements-onnx.txt`, and
+starts the audio hub plus state API. Open
+`http://127.0.0.1:8787/api/state` to inspect the live system. Stop with Ctrl+C.
 
-For the full Uno Q microphone-to-haptic flow, complete the one-time board setup
-in [`docs/UNO_Q_MICROPHONE.md`](docs/UNO_Q_MICROPHONE.md), then run
-`./scripts/run_demo.sh --live` from WSL, Linux, or macOS. Android build and
-installation instructions are in [`frontend/android/README.md`](frontend/android/README.md).
-
-## Quick start (Windows hub)
-
-One command creates the virtual environment if needed and starts the hub with
-the demo classifier plus the gated local `base.en` speech path:
-
-```powershell
-.\scripts\run_demo.ps1
-```
-
-Useful variants:
-
-```powershell
-.\scripts\run_demo.ps1 -Classifier yamnet          # real YAMNet classifier
-.\scripts\run_demo.ps1 -SpeechModel tiny.en        # use the smaller speech model
-.\scripts\run_demo.ps1 -NoSpeech                   # environmental detection only
-.\scripts\run_demo.ps1 -AlertProfile sleep         # start in another profile
-.\scripts\run_demo.ps1 -BindHost 0.0.0.0           # accept the Uno Q over LAN/Tailscale
-```
-
-## Quick start (macOS, Linux, or WSL)
-
-The shell launcher creates `.venv`, starts both hub ports, and configures and
-opens an already-installed Android companion through `adb` when available:
-
-```bash
-./scripts/run_demo.sh
-```
-
-Run the complete deterministic stage showcase with one command:
+On macOS, Linux, or WSL:
 
 ```bash
 ./scripts/run_demo.sh --showcase
 ```
 
-Run the real USB microphone on the Uno Q, connected ONNX classifier, and
-physical haptics together with one command from the computer:
+After the one-time Uno Q setup, start the real microphone, connected ONNX hub,
+and physical haptics together:
 
 ```bash
 ./scripts/run_demo.sh --live
 ```
 
-The live launcher auto-detects one reachable Uno Q over mDNS or Tailscale,
-selects its USB capture device, exposes the local hub, and starts the board
-client over SSH. A pairing token is optional for this trusted-network demo; SSH
-may request the board password. If discovery is ambiguous, add
-`--uno-host arduino@HOST`.
+Detailed setup is intentionally kept out of this overview:
 
-Add `--install-android` to build/install the companion before launch, or
-`--exit-after-showcase` for an automated smoke test that stops when replay ends.
+- [Uno Q microphone and deployment](docs/UNO_Q_MICROPHONE.md)
+- [Android build, install, and phone inference](frontend/android/README.md)
+- [Three-minute live demo](docs/DEMO.md)
+- [No-hardware workflow](docs/NO_HARDWARE_DEMO.md)
 
-On the board, use `scripts/setup_uno_q.sh` once and `scripts/deploy_uno_q.sh` to
-pull, flash the tracked haptic firmware, and restart the managed microphone +
-haptic client. Configure `QUIETCUE_PAIRING_TOKEN` on both devices when the
-development transport is exposed beyond a short trusted-network demo.
+## Tests
 
-## Live Uno Q microphone
-
-The Uno Q continuously captures a USB/ALSA microphone and streams 16 kHz mono
-PCM16 to exactly one reachable Samsung/PC hub. Environmental and speech
-inference happen on that connected device; the Uno Q only computes inexpensive
-signal-health metadata such as RMS, peak level, and voice activity.
-
-The hub maps model scores to QuietCue events, applies the active profile, and
-returns compact alert commands. The Uno Q sends those commands through the
-Arduino App Lab Bridge to the STM32 vibration firmware. If the hub is
-unreachable, the client reconnects with bounded backoff and does not guess at
-safety-critical events locally.
-
-Profile-approved alerts return over the same connection and are delivered to
-the STM32 through the real Arduino App Lab Bridge. Hardware results are reported
-back to the state API so the companion app distinguishes “awaiting delivery”
-from “delivered to wearable.” The board service reconnects automatically after
-hub, Wi-Fi, microphone, App Lab, or process interruptions.
-
-See [`docs/UNO_Q_MICROPHONE.md`](docs/UNO_Q_MICROPHONE.md) for microphone
-detection, level checks, live streaming, connected speech-model setup, privacy, and
-the current Copilot-versus-Samsung routing boundary.
-
-See [`docs/PROJECT_STATUS_2026-08-06.md`](docs/PROJECT_STATUS_2026-08-06.md)
-for the verified implementation and hardware boundary.
-
-## Develop without connected hardware
-
-The current development loop can replay a validated 16 kHz mono PCM16 WAV through
-the same chunked TCP protocol the Uno Q microphone adapter will use later. A
-dependency-free demo classifier, backend profile rules, simulated haptic output,
-and the Android state feed make the entire software path testable now.
-
-Run a complete terminal-only smoke test:
-
-```bash
-python3 scripts/run_no_hardware_demo.py --event fire_alarm --profile home
-```
-
-This mode is a deterministic simulator, not a real safety classifier. See
-[`docs/NO_HARDWARE_DEMO.md`](docs/NO_HARDWARE_DEMO.md) to keep the server running,
-display the alert on an attached Android phone, change profiles, or substitute a
-real prerecorded sound for the synthetic fixture.
-
-The Android companion can also create a reviewable profile draft from a natural-
-language situation description and teach a user-specific sound in one guided
-session using the same Uno Q microphone used for live detection. See
-[`docs/PROFILE_AGENT_AND_ENROLLMENT.md`](docs/PROFILE_AGENT_AND_ENROLLMENT.md).
-
-The **My context** tab adds a private, manually controlled identity and context
-bank. Users can enroll their name and pronunciation, add people and life context,
-configure encrypted speech/name settings, and synchronize those approved hints to
-local speech inference. QuietCue does not
-generate or suggest memories from background conversations. See
-[`docs/IDENTITY_AND_MEMORY.md`](docs/IDENTITY_AND_MEMORY.md) and
-[`docs/WHISPER_ONNX.md`](docs/WHISPER_ONNX.md).
-
-The Android companion also supports **Smart profile suggestions** using locally
-stored phone geofences. A saved Home, Work, or School boundary can suggest its
-mapped profile on arrival and return to the previous profile on departure. Users
-can opt into automatic switching per place, while recent manual profile choices
-remain protected for two hours. A demo-only place provides deterministic arrival
-and departure buttons without GPS movement. See
-[`docs/SMART_PROFILE_SUGGESTIONS.md`](docs/SMART_PROFILE_SUGGESTIONS.md).
-
-## First model: environmental sound classification
-
-The first working inference slice uses Google's pretrained YAMNet model. It takes
-an uncompressed PCM WAV file, converts it to 16 kHz mono audio, and prints the
-highest-confidence AudioSet sound classes.
-
-### Setup
-
-Python 3.13 is supported by the pinned dependencies.
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r backend/requirements.txt
-```
-
-### Run
-
-```bash
-python -m backend.inference.sound_classifier path/to/audio.wav
-```
-
-The model is downloaded from TensorFlow Hub on the first run and cached locally.
-Later runs reuse the cached copy. Use `--top-k 10` to show more predictions.
-
-YAMNet is a baseline classifier, not yet a safety-certified alerting system. Alert
-thresholds, temporal smoothing, and emergency-event testing must be added before
-its output controls wearable haptics.
-
-## Android companion app
-
-The native Android companion is under [`frontend/android`](frontend/android). Its
-first working slice provides persistent built-in and custom profiles, per-sound
-alert customization, quiet hours, phrase triggers, and active-profile switching.
-See [`frontend/android/README.md`](frontend/android/README.md) for build instructions
-and the current integration boundary.
-
-## Backend tests
-
-The transport, WAV source, profile decisions, and full simulated network loop use
-the Python standard library and can be tested without installing TensorFlow:
+Backend protocol, profile, speech, enrollment, reconnection, and end-to-end
+simulation tests run without the optional ML packages:
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-## Team and submission
+Android unit tests:
 
-### Team members
+```bash
+cd frontend/android
+./gradlew testDebugUnitTest
+```
 
-- Akshaj Bharadwaj — akshaj.bharadwaj@gmail.com
-- Rohan Krishnan — rohankrishnan2000@gmail.com
-- Rikhil Rao — raorikhil@gmail.com
-- Shreya Shirsathe — sshirsathe2023@gmail.com
-- Sarayu Pochimireddy — sarayu.pr11@gmail.com
+## Architecture and project evidence
 
-- **License:** [MIT](LICENSE).
-- **Setup from scratch:** Quick start above (hub) plus
-  [`docs/UNO_Q_MICROPHONE.md`](docs/UNO_Q_MICROPHONE.md) (board) — or use the
-  no-hardware demo if no board is available.
-- **Demo:** [`docs/DEMO.md`](docs/DEMO.md).
-- **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-- **Benchmarks:** `docs/benchmarks/` (QUAD conversion and profiling reports).
-- **Tests:** `python3 -m unittest discover -s tests -v` (no ML dependencies
-  needed).
-- **Submission checklist:** [`docs/SUBMISSION_CHECKLIST.md`](docs/SUBMISSION_CHECKLIST.md).
+- [System architecture](docs/ARCHITECTURE.md)
+- [Verified implementation status](docs/PROJECT_STATUS_2026-08-06.md)
+- [QUAD conversion and profiling](docs/benchmarks/QUAD_AUDIO_MODEL.md)
+- [Profile assistant and custom sound enrollment](docs/PROFILE_AGENT_AND_ENROLLMENT.md)
+- [Identity, memory, and privacy model](docs/IDENTITY_AND_MEMORY.md)
+- [Smart profile suggestions](docs/SMART_PROFILE_SUGGESTIONS.md)
 
-No secrets belong in this repository: pairing tokens, QUAD MCP tokens,
-Tailscale keys, and Wi-Fi credentials are environment variables only.
+## Safety and privacy
+
+QuietCue is a research prototype, not a certified life-safety or medical device.
+It must not be the sole means of detecting an emergency. The default runtime
+does not store raw microphone audio, the critical alert path has no cloud
+dependency, and secrets belong in environment variables rather than the
+repository.
+
+## Team
+
+| Name | Email |
+|---|---|
+| Akshaj Bharadwaj | akshaj.bharadwaj@gmail.com |
+| Rohan Krishnan | rohankrishnan2000@gmail.com |
+| Rikhil Rao | raorikhil@gmail.com |
+| Shreya Shirsathe | sshirsathe2023@gmail.com |
+| Sarayu Pochimireddy | sarayu.pr11@gmail.com |
+
+## License
+
+**MIT** — see [`LICENSE`](LICENSE). Build on it, adapt it, and make important
+sounds more accessible.
