@@ -36,7 +36,8 @@ class CustomSoundMatcher:
             return ()
         matches: list[ConfirmedEvent] = []
         for enrolled in prototypes:
-            similarity = cosine_similarity(features, enrolled.prototype)
+            reference_prototypes = enrolled.prototypes or (enrolled.prototype,)
+            similarity = max(cosine_similarity(features, prototype) for prototype in reference_prototypes)
             if similarity < enrolled.similarity_threshold:
                 continue
             matches.append(

@@ -79,13 +79,26 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
         norm = math.sqrt(sum(value * value for value in prototype))
         if not 0.98 <= norm <= 1.02:
             raise ValueError("Custom sound prototype must be normalized")
+        prototypes_document = item.get("prototypes", [prototype_document])
+        if not isinstance(prototypes_document, list) or not 1 <= len(prototypes_document) <= 30:
+            raise ValueError("Custom sound must contain between one and 30 prototypes")
+        prototypes: list[tuple[float, ...]] = []
+        for sample in prototypes_document:
+            if not isinstance(sample, list) or len(sample) != 8:
+                raise ValueError("Each custom sound prototype must contain eight features")
+            values = tuple(_bounded_float(value, 0.0, 1.0) for value in sample)
+            sample_norm = math.sqrt(sum(value * value for value in values))
+            if not 0.98 <= sample_norm <= 1.02:
+                raise ValueError("Custom sound prototype must be normalized")
+            prototypes.append(values)
         custom_sounds.append(
             CustomSoundPrototype(
                 event=event,
                 label=_required_text(item, "label", 40),
                 prototype=prototype,
                 similarity_threshold=_bounded_float(item.get("similarity_threshold"), 0.70, 0.98),
-                matcher_version=_bounded_int(item.get("matcher_version", 1), 1, 1),
+                matcher_version=_bounded_int(item.get("matcher_version", 1), 1, 2),
+                prototypes=tuple(prototypes),
             )
         )
 

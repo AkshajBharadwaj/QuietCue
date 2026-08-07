@@ -21,8 +21,9 @@ deliver to the STM32 haptic firmware.
   and hardware-confirmed haptic output on the dashboard when a Uno Q is connected.
 - A constrained local profile assistant that turns a situation description into
   a complete draft for explicit user review.
-- Custom sound enrollment using three two-second examples, one background sample,
-  and an acoustic fingerprint that discards raw audio immediately.
+- Custom sound enrollment using 3–30 retained two-second fingerprints (6–10
+  varied examples recommended), background and optional confusing-sound
+  calibration, and a pre-save recognition test. Raw audio is discarded immediately.
 - Active-profile and enrolled-fingerprint synchronization to the local hub.
 - A foreground TCP inference service on port `8765` using the checked-in quantized
   W8A8 YAMNet ONNX model and ONNX Runtime for Android.

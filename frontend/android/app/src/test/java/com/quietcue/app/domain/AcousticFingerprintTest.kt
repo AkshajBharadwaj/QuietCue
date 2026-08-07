@@ -25,8 +25,22 @@ class AcousticFingerprintTest {
 
         assertTrue(sound.id.startsWith("custom:"))
         assertEquals(8, sound.enrollment?.prototype?.size)
+        assertEquals(3, sound.enrollment?.prototypes?.size)
+        assertEquals(3, sound.enrollment?.sampleRmsDbfs?.size)
         assertEquals(3, sound.enrollment?.positiveSampleCount)
         assertTrue(sound.enrollment!!.similarityThreshold in 0.72f..0.95f)
+    }
+
+    @Test
+    fun `enrollment retains varied examples instead of collapsing them`() {
+        val positives = listOf(250, 1_000, 3_000).map { AcousticFingerprint.fromPcm16(tone(it)) }
+        val background = AcousticFingerprint.fromPcm16(ShortArray(AcousticFingerprint.SAMPLE_RATE))
+
+        val sound = AcousticFingerprint.enroll(
+            "Variable buzzer", "Different modes", AlertPriority.ATTENTION, positives, background, 42,
+        )
+
+        assertEquals(positives.map(CapturedFingerprint::features), sound.enrollment?.prototypes)
     }
 
     private fun tone(frequency: Int, amplitude: Double = 0.35): ShortArray =

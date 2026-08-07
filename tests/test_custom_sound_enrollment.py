@@ -84,6 +84,53 @@ class CustomSoundEnrollmentTest(unittest.TestCase):
                 }
             )
 
+    def test_multiple_prototypes_match_the_strongest_variant(self) -> None:
+        low_pcm = _tone_pcm16(250)
+        high_pcm = _tone_pcm16(3_000)
+        low_prototype, _ = fingerprint_pcm16(low_pcm, 16_000)
+        high_prototype, _ = fingerprint_pcm16(high_pcm, 16_000)
+        profile = decode_profile(
+            {
+                "id": "multi-sample",
+                "name": "Multi sample",
+                "sound_rules": [{
+                    "event": "custom:buzzer", "enabled": True, "confidence_threshold": 0.8,
+                    "category": "attention", "pattern": "long_pulse", "strength": "standard",
+                    "requires_ack": False, "cooldown_seconds": 20,
+                }],
+                "custom_sounds": [{
+                    "event": "custom:buzzer", "label": "Buzzer",
+                    "prototype": list(low_prototype),
+                    "prototypes": [list(low_prototype), list(high_prototype)],
+                    "similarity_threshold": 0.8, "matcher_version": 2,
+                }],
+            }
+        )
+
+        matches = CustomSoundMatcher(profile.custom_sounds).match_pcm16(high_pcm, 16_000)
+
+        self.assertEqual("custom:buzzer", matches[0].event)
+        self.assertGreater(matches[0].confidence, 0.99)
+
+    def test_more_than_thirty_prototypes_is_rejected(self) -> None:
+        pcm = _tone_pcm16(1_000)
+        prototype, _ = fingerprint_pcm16(pcm, 16_000)
+        document = {
+            "id": "bounded", "name": "Bounded",
+            "sound_rules": [{
+                "event": "custom:buzzer", "enabled": True, "confidence_threshold": 0.8,
+                "category": "attention", "pattern": "long_pulse", "strength": "standard",
+                "requires_ack": False, "cooldown_seconds": 20,
+            }],
+            "custom_sounds": [{
+                "event": "custom:buzzer", "label": "Buzzer", "prototype": list(prototype),
+                "prototypes": [list(prototype)] * 31, "similarity_threshold": 0.8,
+            }],
+        }
+
+        with self.assertRaisesRegex(ValueError, "one and 30"):
+            decode_profile(document)
+
 
 def _tone_pcm16(frequency: int, seconds: float = 0.5) -> bytes:
     return b"".join(

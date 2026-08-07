@@ -37,6 +37,7 @@ class CustomSoundPrototype:
     prototype: tuple[float, ...]
     similarity_threshold: float
     matcher_version: int = 1
+    prototypes: tuple[tuple[float, ...], ...] = ()
 
 
 @dataclass(frozen=True)

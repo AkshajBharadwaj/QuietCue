@@ -1,6 +1,7 @@
 package com.quietcue.app.data
 
 import com.quietcue.app.domain.AlertPriority
+import com.quietcue.app.domain.AcousticFingerprint
 import com.quietcue.app.domain.HapticPattern
 import com.quietcue.app.domain.HapticStrength
 import com.quietcue.app.domain.SoundDefinition
@@ -41,6 +42,8 @@ object SoundLibraryJsonCodec {
             sound.enrollment?.let { enrollment ->
                 JSONObject()
                     .put("prototype", JSONArray(enrollment.prototype))
+                    .put("prototypes", JSONArray(enrollment.prototypes.map { JSONArray(it) }))
+                    .put("sampleRmsDbfs", JSONArray(enrollment.sampleRmsDbfs))
                     .put("similarityThreshold", enrollment.similarityThreshold.toDouble())
                     .put("positiveSampleCount", enrollment.positiveSampleCount)
                     .put("backgroundSimilarity", enrollment.backgroundSimilarity.toDouble())
@@ -69,8 +72,22 @@ object SoundLibraryJsonCodec {
                 for (index in 0 until prototypeJson.length()) add(prototypeJson.optDouble(index).toFloat())
             }
             if (prototype.size != 8) return null
+            val prototypesJson = enrollmentDocument.optJSONArray("prototypes")
+            val prototypes = buildList {
+                if (prototypesJson != null) {
+                    for (sampleIndex in 0 until minOf(prototypesJson.length(), AcousticFingerprint.MAX_POSITIVE_SAMPLES)) {
+                        val sampleJson = prototypesJson.optJSONArray(sampleIndex) ?: continue
+                        val sample = List(sampleJson.length()) { sampleJson.optDouble(it).toFloat() }
+                        if (sample.size == AcousticFingerprint.FEATURE_COUNT) add(sample)
+                    }
+                }
+            }.ifEmpty { listOf(prototype) }
             SoundEnrollment(
                 prototype = prototype,
+                prototypes = prototypes,
+                sampleRmsDbfs = enrollmentDocument.optJSONArray("sampleRmsDbfs")?.let { levels ->
+                    List(minOf(levels.length(), prototypes.size)) { levels.optDouble(it).toFloat() }
+                } ?: emptyList(),
                 similarityThreshold = enrollmentDocument.optDouble("similarityThreshold", 0.82).toFloat()
                     .coerceIn(0.70f, 0.98f),
                 positiveSampleCount = enrollmentDocument.optInt("positiveSampleCount", 3).coerceAtLeast(1),

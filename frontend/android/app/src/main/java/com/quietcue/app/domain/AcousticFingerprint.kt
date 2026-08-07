@@ -16,6 +16,9 @@ data class CapturedFingerprint(
 object AcousticFingerprint {
     const val SAMPLE_RATE = 16_000
     const val FEATURE_COUNT = 8
+    const val MIN_POSITIVE_SAMPLES = 3
+    const val RECOMMENDED_POSITIVE_SAMPLES = 6
+    const val MAX_POSITIVE_SAMPLES = 30
     val frequencies = intArrayOf(250, 375, 500, 750, 1_000, 1_500, 2_000, 3_000)
 
     fun fromPcm16(samples: ShortArray): CapturedFingerprint {
@@ -44,21 +47,23 @@ object AcousticFingerprint {
         positives: List<CapturedFingerprint>,
         background: CapturedFingerprint,
         nowMs: Long = System.currentTimeMillis(),
+        confusingSounds: List<CapturedFingerprint> = emptyList(),
     ): SoundDefinition {
-        require(positives.size >= 3) { "Record at least three examples" }
+        require(positives.size in MIN_POSITIVE_SAMPLES..MAX_POSITIVE_SAMPLES) {
+            "Record between $MIN_POSITIVE_SAMPLES and $MAX_POSITIVE_SAMPLES examples"
+        }
         require(positives.all { it.rmsDbfs >= -50f }) { "One recording is too quiet; record it again" }
         val averaged = List(FEATURE_COUNT) { index -> positives.map { it.features[index] }.average() }
         val norm = sqrt(averaged.sumOf { it * it }).coerceAtLeast(1e-12)
         val prototype = averaged.map { (it / norm).toFloat() }
-        val minimumPositive = positives.minOf { similarity(prototype, it.features) }
-        val backgroundSimilarity = similarity(prototype, background.features)
-        require(minimumPositive >= 0.80f) { "The examples are too different; record the same sound again" }
-        require(backgroundSimilarity <= minimumPositive - 0.08f) {
-            "The background sounds too similar to the examples; record in a quieter moment"
+        val negativeSamples = listOf(background) + confusingSounds
+        val backgroundSimilarity = negativeSamples.maxOf { negative ->
+            positives.maxOf { positive -> similarity(positive.features, negative.features) }
         }
-        val midpoint = (minimumPositive + backgroundSimilarity) / 2f
-        val threshold = min(minimumPositive - 0.03f, max(backgroundSimilarity + 0.08f, midpoint))
-            .coerceIn(0.72f, 0.95f)
+        require(backgroundSimilarity < 0.92f) {
+            "A background or confusing sound is too similar to an example; replace that recording"
+        }
+        val threshold = max(0.80f, backgroundSimilarity + 0.04f).coerceAtMost(0.95f)
         val pattern = when (priority) {
             AlertPriority.INFORMATIONAL -> HapticPattern.TWO_SHORT
             AlertPriority.ATTENTION -> HapticPattern.LONG_PULSE
@@ -79,6 +84,8 @@ object AcousticFingerprint {
             defaultRequiresAcknowledgement = priority == AlertPriority.EMERGENCY,
             enrollment = SoundEnrollment(
                 prototype = prototype,
+                prototypes = positives.map(CapturedFingerprint::features),
+                sampleRmsDbfs = positives.map(CapturedFingerprint::rmsDbfs),
                 similarityThreshold = threshold,
                 positiveSampleCount = positives.size,
                 backgroundSimilarity = backgroundSimilarity,

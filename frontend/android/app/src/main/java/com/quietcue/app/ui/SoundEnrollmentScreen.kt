@@ -29,6 +29,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -75,6 +76,8 @@ fun SoundEnrollmentScreen(
     val priority = AlertPriority.valueOf(priorityName)
     val positives = remember { mutableStateListOf<CapturedFingerprint>() }
     var background by remember { mutableStateOf<CapturedFingerprint?>(null) }
+    val confusingSounds = remember { mutableStateListOf<CapturedFingerprint>() }
+    var testResult by remember { mutableStateOf<String?>(null) }
     var recordingLabel by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -118,7 +121,7 @@ fun SoundEnrollmentScreen(
         ) {
             item {
                 Text(
-                    "Record three examples and one background sample. QuietCue keeps only an acoustic fingerprint—not the raw audio.",
+                    "Record at least 3 examples; 6–10 varied examples are recommended. You can add up to 30. QuietCue keeps only acoustic fingerprints—not raw audio.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -161,21 +164,35 @@ fun SoundEnrollmentScreen(
                             Icon(Icons.Rounded.GraphicEq, contentDescription = null)
                             Text("Sound examples", style = MaterialTheme.typography.titleLarge)
                         }
-                        Text("Play the sound from roughly the distance where you expect QuietCue to hear it.")
+                        Text("Vary distance, angle, and normal room noise. Try nearby, across the room, and partly muffled examples.")
                         positives.forEachIndexed { index, sample ->
-                            Text("✓ Example ${index + 1}: ${sample.rmsDbfs.roundToInt()} dBFS")
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("✓ Example ${index + 1}: ${sample.rmsDbfs.roundToInt()} dBFS")
+                                TextButton(onClick = { positives.removeAt(index); testResult = null }) { Text("Remove") }
+                            }
+                        }
+                        if (positives.size in AcousticFingerprint.MIN_POSITIVE_SAMPLES until AcousticFingerprint.RECOMMENDED_POSITIVE_SAMPLES) {
+                            Text("Usable, but add ${AcousticFingerprint.RECOMMENDED_POSITIVE_SAMPLES - positives.size} more varied example(s) for better coverage.")
+                        }
+                        if (positives.indices.any { right ->
+                                (0 until right).any { left ->
+                                    AcousticFingerprint.similarity(positives[left].features, positives[right].features) > 0.995f
+                                }
+                            }
+                        ) {
+                            Text("Some examples are nearly identical. Record from another distance, angle, or noise condition.", color = MaterialTheme.colorScheme.error)
                         }
                         Button(
                             onClick = {
                                 capture("Recording example ${positives.size + 1}") { sample -> positives += sample }
                             },
-                            enabled = recordingLabel == null && positives.size < 3,
+                            enabled = recordingLabel == null && positives.size < AcousticFingerprint.MAX_POSITIVE_SAMPLES,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Icon(Icons.Rounded.Mic, contentDescription = null)
                             Text(
                                 if (recordingLabel != null) " ${recordingLabel}…"
-                                else " Record 2-second example ${positives.size + 1}",
+                                else " Add 2-second example ${positives.size + 1}",
                             )
                         }
                     }
@@ -198,6 +215,57 @@ fun SoundEnrollmentScreen(
                     }
                 }
             }
+            item {
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Confusing sounds (optional)", style = MaterialTheme.typography.titleLarge)
+                        Text("Add sounds that resemble this one but should not trigger it. These help set a safer threshold.")
+                        confusingSounds.forEachIndexed { index, sample ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Non-match ${index + 1}: ${sample.rmsDbfs.roundToInt()} dBFS")
+                                TextButton(onClick = { confusingSounds.removeAt(index) }) { Text("Remove") }
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { capture("Recording non-match") { confusingSounds += it } },
+                            enabled = recordingLabel == null && confusingSounds.size < 10,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Add confusing sound") }
+                    }
+                }
+            }
+            item {
+                Card {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Test before saving", style = MaterialTheme.typography.titleLarge)
+                        Text("Play the enrolled sound again to check whether the current examples recognize it.")
+                        OutlinedButton(
+                            onClick = {
+                                capture("Testing sound") { sample ->
+                                    val best = positives.maxOfOrNull {
+                                        AcousticFingerprint.similarity(sample.features, it.features)
+                                    } ?: 0f
+                                    val negatives = listOfNotNull(background) + confusingSounds
+                                    val negativeSimilarity = negatives.maxOfOrNull { negative ->
+                                        positives.maxOf { positive ->
+                                            AcousticFingerprint.similarity(positive.features, negative.features)
+                                        }
+                                    } ?: 0f
+                                    val threshold = maxOf(0.80f, negativeSimilarity + 0.04f).coerceAtMost(0.95f)
+                                    testResult = if (best >= threshold) {
+                                        "Match ${(best * 100).roundToInt()}%"
+                                    } else {
+                                        "No match ${(best * 100).roundToInt()}% (needs ${(threshold * 100).roundToInt()}%) — add a varied example"
+                                    }
+                                }
+                            },
+                            enabled = recordingLabel == null && positives.size >= AcousticFingerprint.MIN_POSITIVE_SAMPLES,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Record test") }
+                        testResult?.let { Text(it) }
+                    }
+                }
+            }
             error?.let { message ->
                 item { Text(message, color = MaterialTheme.colorScheme.error) }
             }
@@ -211,10 +279,11 @@ fun SoundEnrollmentScreen(
                                 priority = priority,
                                 positives = positives,
                                 background = requireNotNull(background),
+                                confusingSounds = confusingSounds,
                             )
                         }.onSuccess(onEnroll).onFailure { error = it.message }
                     },
-                    enabled = name.isNotBlank() && positives.size >= 3 && background != null && recordingLabel == null,
+                    enabled = name.isNotBlank() && positives.size >= AcousticFingerprint.MIN_POSITIVE_SAMPLES && background != null && recordingLabel == null,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Create enrolled sound")
