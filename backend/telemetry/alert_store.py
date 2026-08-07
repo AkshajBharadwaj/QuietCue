@@ -76,7 +76,11 @@ class AlertStateStore:
             custom_sound_matched=any(event.event.startswith("custom:") for event in inference.events),
         )
         for alert in decisions.alerts:
-            document = alert.to_wire()
+            document = {
+                **alert.to_wire(),
+                "haptic_active": alert.requires_ack,
+                "acknowledged_at_ms": None,
+            }
             self._latest_alert = document
             self._recent_alerts.insert(0, document)
             del self._recent_alerts[20:]
@@ -101,6 +105,12 @@ class AlertStateStore:
         self._latest_haptic_result = document
         self._haptic_devices[device_id] = document
 
+        if document["acknowledged"] and self._latest_alert is not None:
+            self._mark_haptic_stopped(
+                str(self._latest_alert.get("event_id", "")),
+                acknowledged_at_ms=now_ms,
+            )
+
         delivered_by_id = {
             str(item.get("event_id")): item
             for item in outcomes
@@ -119,6 +129,27 @@ class AlertStateStore:
                 "pattern": outcome.get("pattern"),
                 "delivered_at_ms": now_ms,
             }
+
+    def stop_haptic(self, event_id: str | None = None) -> dict[str, Any]:
+        """Acknowledge the current alert and prepare a semantic device stop command."""
+        if self._latest_alert is None:
+            raise ValueError("There is no active alert to stop")
+        current_event_id = str(self._latest_alert.get("event_id", ""))
+        if event_id and event_id != current_event_id:
+            raise ValueError("The requested alert is no longer active")
+        acknowledged_at_ms = int(time.time() * 1_000)
+        self._mark_haptic_stopped(current_event_id, acknowledged_at_ms=acknowledged_at_ms)
+        self._append_jsonl(
+            {
+                "kind": "haptic_stopped",
+                "event_id": current_event_id,
+                "acknowledged_at_ms": acknowledged_at_ms,
+            }
+        )
+        return {
+            "event_id": current_event_id,
+            "acknowledged_at_ms": acknowledged_at_ms,
+        }
 
     def snapshot(self) -> dict[str, Any]:
         device_ids = sorted(set(self._sessions.values()))
@@ -154,6 +185,16 @@ class AlertStateStore:
         if not self._discovery_tracker.dismiss(candidate_id):
             raise ValueError("Unknown discovery candidate")
         return {"status": action, "candidate_id": candidate_id}
+
+    def _mark_haptic_stopped(self, event_id: str, *, acknowledged_at_ms: int) -> None:
+        if self._latest_alert is not None and self._latest_alert.get("event_id") == event_id:
+            self._latest_alert["haptic_active"] = False
+            self._latest_alert["acknowledged_at_ms"] = acknowledged_at_ms
+        for alert in self._recent_alerts:
+            if alert.get("event_id") == event_id:
+                alert["haptic_active"] = False
+                alert["acknowledged_at_ms"] = acknowledged_at_ms
+                break
 
     def _append_jsonl(self, document: dict[str, Any]) -> None:
         if self._jsonl_path is None:

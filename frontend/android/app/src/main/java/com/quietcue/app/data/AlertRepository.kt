@@ -15,6 +15,12 @@ import org.json.JSONObject
 class AlertRepository(
     private val stateUrl: String = "http://127.0.0.1:8787/api/state",
 ) {
+    private val stopUrl: URL
+        get() {
+            val state = URL(stateUrl)
+            return URL(state.protocol, state.host, state.port, "/api/haptics/stop")
+        }
+
     suspend fun syncProfile(catalog: ProfileCatalog, memoryBank: MemoryBank = MemoryBank()) = withContext(Dispatchers.IO) {
         val document = ProfileSyncJsonCodec.encode(catalog, memoryBank).toByteArray(Charsets.UTF_8)
         val connection = URL(stateUrl).openConnection() as HttpURLConnection
@@ -68,6 +74,26 @@ class AlertRepository(
             connection.outputStream.use { it.write(document) }
             check(connection.responseCode == HttpURLConnection.HTTP_OK) {
                 "Discovery action returned HTTP ${connection.responseCode}"
+            }
+            connection.inputStream.close()
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    suspend fun stopHaptic(eventId: String) = withContext(Dispatchers.IO) {
+        val document = JSONObject().put("event_id", eventId).toString().toByteArray(Charsets.UTF_8)
+        val connection = stopUrl.openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 1_000
+            connection.readTimeout = 1_000
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.setFixedLengthStreamingMode(document.size)
+            connection.outputStream.use { it.write(document) }
+            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
+                "Stop vibration returned HTTP ${connection.responseCode}"
             }
             connection.inputStream.close()
         } finally {
@@ -131,5 +157,9 @@ class AlertRepository(
         requiresAcknowledgement = json.optBoolean("requires_ack", false),
         simulated = json.optBoolean("simulated", true),
         fallbackToPhone = json.optBoolean("fallback_to_phone", false),
+        hapticActive = json.optBoolean("haptic_active", false),
+        acknowledgedAtMs = json.optLong("acknowledged_at_ms").takeIf {
+            !json.isNull("acknowledged_at_ms")
+        },
     )
 }
