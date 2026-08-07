@@ -19,6 +19,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Hearing
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Watch
@@ -44,17 +45,23 @@ import androidx.compose.ui.unit.dp
 import com.quietcue.app.domain.ProfileCatalog
 import com.quietcue.app.domain.RuntimeState
 import com.quietcue.app.domain.SoundDiscoveryCandidate
+import com.quietcue.app.domain.PlaceTransition
+import com.quietcue.app.domain.SmartProfileState
 import com.quietcue.app.phone.PhoneInferenceServerState
 
 @Composable
 fun DashboardScreen(
     catalog: ProfileCatalog,
     runtimeState: RuntimeState,
+    smartProfileState: SmartProfileState,
     phoneInferenceState: PhoneInferenceServerState,
     contentPadding: PaddingValues,
     onTeachDiscovery: (SoundDiscoveryCandidate) -> Unit,
     onAddDiscovery: (SoundDiscoveryCandidate) -> Unit,
     onDismissDiscovery: (String) -> Unit,
+    onAcceptSmartSuggestion: () -> Unit,
+    onAlwaysSmartSuggestion: () -> Unit,
+    onDismissSmartSuggestion: () -> Unit,
 ) {
     val profile = catalog.activeProfile
     var addCandidate by remember { mutableStateOf<SoundDiscoveryCandidate?>(null) }
@@ -104,6 +111,53 @@ fun DashboardScreen(
                             Text("Active profile", style = MaterialTheme.typography.labelLarge)
                             Text(profile.name, style = MaterialTheme.typography.headlineSmall)
                             Text("${profile.enabledSoundCount} sounds monitored")
+                        }
+                    }
+                }
+            }
+        }
+
+        smartProfileState.suggestion?.let { suggestion ->
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(Icons.Rounded.LocationOn, contentDescription = null)
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (suggestion.transition == PlaceTransition.ENTER) {
+                                        "You arrived at ${suggestion.placeName}"
+                                    } else {
+                                        "You left ${suggestion.placeName}"
+                                    },
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                                Text(
+                                    "Switch to ${suggestion.targetProfileName}?" +
+                                        if (suggestion.simulated) " • demo event" else "",
+                                )
+                            }
+                        }
+                        Button(onClick = onAcceptSmartSuggestion, modifier = Modifier.fillMaxWidth()) {
+                            Text("Switch to ${suggestion.targetProfileName}")
+                        }
+                        if (suggestion.transition == PlaceTransition.ENTER) {
+                            OutlinedButton(onClick = onAlwaysSmartSuggestion, modifier = Modifier.fillMaxWidth()) {
+                                Text("Always switch here")
+                            }
+                        }
+                        TextButton(onClick = onDismissSmartSuggestion, modifier = Modifier.fillMaxWidth()) {
+                            Text("Not now")
                         }
                     }
                 }

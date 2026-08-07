@@ -33,6 +33,11 @@ deliver to the STM32 haptic firmware.
 - Sound Scout cards from the computer hub after three distinct high-confidence
   episodes of an unmapped label, with reviewed direct-to-profile, dismiss, and
   prefilled custom-enrollment actions.
+- A Smart Places tab with private on-phone place boundaries, Android geofence
+  arrival/departure events, ask-first profile suggestions, opt-in automatic
+  switching, return-to-previous-profile behavior, and two-hour manual overrides.
+- A permission-free hackathon place simulator for deterministic arrival and
+  departure demonstrations without physically moving the phone.
 
 The phone inference service starts when the app opens and remains visible as a
 foreground notification. The dashboard shows whether the model is ready, whether
@@ -113,6 +118,13 @@ the TCP inference listener, and microphone permission only while the user explic
 records enrollment examples. Continuous monitoring audio remains on the Uno Q. See
 [`../../docs/NO_HARDWARE_DEMO.md`](../../docs/NO_HARDWARE_DEMO.md) for the complete
 microphone-free workflow.
+
+Location permission is requested only when the user saves or enables a Smart
+Place. Place coordinates remain in the phone's DataStore and are never included
+in hub profile synchronization. Full background arrival/departure suggestions
+require precise location plus **Allow all the time** access; the rest of QuietCue
+continues to work if either permission is declined. See
+[`../../docs/SMART_PROFILE_SUGGESTIONS.md`](../../docs/SMART_PROFILE_SUGGESTIONS.md).
 
 The enrollment matcher is currently a provisional local spectral fingerprint. It
 is suitable for validating the enrollment product flow, not as a sole detector for

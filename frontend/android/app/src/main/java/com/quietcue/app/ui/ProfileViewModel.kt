@@ -10,6 +10,8 @@ import com.quietcue.app.data.OnDeviceNameRecognizer
 import com.quietcue.app.data.ProfileRepository
 import com.quietcue.app.data.PhoneEnrollmentRecorder
 import com.quietcue.app.data.ProfileSyncJsonCodec
+import com.quietcue.app.data.SmartProfileCoordinator
+import com.quietcue.app.data.SmartProfileRepository
 import com.quietcue.app.domain.AlertProfile
 import com.quietcue.app.domain.ContextMemory
 import com.quietcue.app.domain.MemoryBank
@@ -20,7 +22,13 @@ import com.quietcue.app.domain.RuntimeState
 import com.quietcue.app.domain.CapturedFingerprint
 import com.quietcue.app.domain.SoundDefinition
 import com.quietcue.app.domain.SoundDiscoveryCandidate
+import com.quietcue.app.domain.PlaceTransition
+import com.quietcue.app.domain.SmartPlace
+import com.quietcue.app.domain.SmartProfileState
 import com.quietcue.app.domain.UserIdentity
+import com.quietcue.app.location.GeofenceRegistrationStatus
+import com.quietcue.app.location.SmartPlaceGeofenceManager
+import com.quietcue.app.location.SmartPlaceLocationClient
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,6 +43,10 @@ class ProfileViewModel(
     private val enrollmentRecorder: PhoneEnrollmentRecorder,
     private val memoryRepository: MemoryRepository,
     private val nameRecognizer: OnDeviceNameRecognizer,
+    private val smartRepository: SmartProfileRepository,
+    private val smartCoordinator: SmartProfileCoordinator,
+    private val geofenceManager: SmartPlaceGeofenceManager,
+    private val locationClient: SmartPlaceLocationClient,
 ) : ViewModel() {
     val catalog: StateFlow<ProfileCatalog> = repository.catalog.stateIn(
         scope = viewModelScope,
@@ -48,6 +60,15 @@ class ProfileViewModel(
         initialValue = MemoryBank(),
     )
 
+    val smartProfileState: StateFlow<SmartProfileState> = smartRepository.state.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = SmartProfileState(),
+    )
+
+    private val _geofenceStatus = MutableStateFlow(GeofenceRegistrationStatus.PERMISSION_REQUIRED)
+    val geofenceStatus: StateFlow<GeofenceRegistrationStatus> = _geofenceStatus.asStateFlow()
+
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
@@ -55,6 +76,7 @@ class ProfileViewModel(
     val runtimeState: StateFlow<RuntimeState> = _runtimeState.asStateFlow()
 
     init {
+        refreshSmartPlaces(showMessage = false)
         viewModelScope.launch {
             var lastSyncedProfile: String? = null
             while (true) {
@@ -87,12 +109,14 @@ class ProfileViewModel(
 
     fun save(profile: AlertProfile) = runAction("Profile saved") { repository.save(profile) }
 
-    fun activate(profileId: String) = runAction("Active profile changed") {
-        repository.setActive(profileId)
+    fun activate(profileId: String) = runAction("Active profile changed; location automation paused for two hours") {
+        smartCoordinator.activateManually(profileId)
     }
 
     fun delete(profileId: String) = runAction("Profile deleted") {
         repository.delete(profileId)
+        smartRepository.removeProfile(profileId)
+        refreshGeofences()
     }
 
     fun reset(profileId: String) = runAction("Built-in profile restored") {
@@ -153,6 +177,125 @@ class ProfileViewModel(
 
     fun clearMemoryBank() = runAction("Private memory bank deleted") { memoryRepository.clearAll() }
 
+    fun addCurrentSmartPlace(
+        name: String,
+        profileId: String,
+        radiusMeters: Float,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                require(catalog.value.profiles.any { it.id == profileId }) { "Choose a valid profile" }
+                val location = locationClient.captureCurrentLocation()
+                smartRepository.savePlace(
+                    SmartPlace(
+                        name = name,
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        radiusMeters = radiusMeters,
+                        profileId = profileId,
+                    ),
+                )
+                refreshGeofences()
+            }.onSuccess {
+                _message.value = "$name saved; QuietCue will suggest the selected profile here"
+            }.onFailure { error ->
+                _message.value = error.message ?: "Could not save this place"
+            }
+        }
+    }
+
+    fun addDemoSmartPlace() {
+        viewModelScope.launch {
+            runCatching {
+                val profiles = catalog.value.profiles
+                val target = profiles.firstOrNull { it.name.contains("Work", ignoreCase = true) }
+                    ?: profiles.firstOrNull { it.id != catalog.value.activeProfileId }
+                    ?: error("Create another profile before running the location demo")
+                smartRepository.savePlace(
+                    SmartPlace(
+                        id = DEMO_PLACE_ID,
+                        name = "Hackathon venue",
+                        latitude = 0.0,
+                        longitude = 0.0,
+                        radiusMeters = 150f,
+                        profileId = target.id,
+                        demoOnly = true,
+                    ),
+                )
+            }.onSuccess {
+                _message.value = "Demo place ready; tap Simulate arrival"
+            }.onFailure { error ->
+                _message.value = error.message ?: "Could not create the demo place"
+            }
+        }
+    }
+
+    fun deleteSmartPlace(placeId: String) {
+        viewModelScope.launch {
+            runCatching {
+                smartRepository.deletePlace(placeId)
+                refreshGeofences()
+            }.onSuccess { _message.value = "Place removed" }
+                .onFailure { _message.value = it.message ?: "Could not remove the place" }
+        }
+    }
+
+    fun setSmartPlaceAutoApply(placeId: String, enabled: Boolean) = runAction(
+        if (enabled) "Automatic switching enabled" else "Profile suggestions enabled",
+    ) {
+        smartRepository.setAutoApply(placeId, enabled)
+    }
+
+    fun simulateSmartPlace(placeId: String, transition: PlaceTransition) {
+        viewModelScope.launch {
+            runCatching {
+                smartCoordinator.handleTransition(placeId, transition, simulated = true)
+            }.onSuccess { result ->
+                _message.value = result.message
+            }.onFailure { error ->
+                _message.value = error.message ?: "Could not simulate this place"
+            }
+        }
+    }
+
+    fun acceptSmartProfileSuggestion(always: Boolean) {
+        viewModelScope.launch {
+            runCatching { smartCoordinator.acceptSuggestion(always) }
+                .onSuccess { suggestion ->
+                    _message.value = suggestion?.let {
+                        if (always && it.transition == PlaceTransition.ENTER) {
+                            "${it.targetProfileName} active; future arrivals will switch automatically"
+                        } else {
+                            "${it.targetProfileName} is now active"
+                        }
+                    } ?: "That suggestion is no longer available"
+                }
+                .onFailure { _message.value = it.message ?: "Could not change profiles" }
+        }
+    }
+
+    fun dismissSmartProfileSuggestion() = runAction("Location suggestion dismissed") {
+        smartCoordinator.dismissSuggestion()
+    }
+
+    fun refreshSmartPlaces(showMessage: Boolean = false) {
+        viewModelScope.launch {
+            runCatching { refreshGeofences() }
+                .onSuccess { status ->
+                    if (showMessage) {
+                        _message.value = when (status) {
+                            GeofenceRegistrationStatus.ACTIVE -> "Background place suggestions are active"
+                            GeofenceRegistrationStatus.NO_PLACES -> "Add a real place to start monitoring"
+                            GeofenceRegistrationStatus.PERMISSION_REQUIRED -> "Allow precise and all-time location access"
+                            GeofenceRegistrationStatus.PLAY_SERVICES_UNAVAILABLE -> "Google Play location services are unavailable"
+                            GeofenceRegistrationStatus.REGISTRATION_FAILED -> "Android could not register the saved boundaries"
+                        }
+                    }
+                }
+                .onFailure { error -> if (showMessage) _message.value = error.message }
+        }
+    }
+
     suspend fun recordEnrollmentFingerprint(): CapturedFingerprint =
         enrollmentRecorder.recordFingerprint()
 
@@ -170,19 +313,33 @@ class ProfileViewModel(
         }
     }
 
+    private suspend fun refreshGeofences(): GeofenceRegistrationStatus = runCatching {
+        geofenceManager.refresh()
+    }.getOrDefault(GeofenceRegistrationStatus.REGISTRATION_FAILED).also {
+        _geofenceStatus.value = it
+    }
+
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(ProfileViewModel::class.java))
+                val profileRepository = ProfileRepository(context.applicationContext)
+                val smartRepository = SmartProfileRepository(context.applicationContext)
                 return ProfileViewModel(
-                    ProfileRepository(context.applicationContext),
+                    profileRepository,
                     AlertRepository(),
                     PhoneEnrollmentRecorder(),
                     MemoryRepository(context.applicationContext),
                     OnDeviceNameRecognizer(context.applicationContext),
+                    smartRepository,
+                    SmartProfileCoordinator(profileRepository, smartRepository),
+                    SmartPlaceGeofenceManager(context.applicationContext, smartRepository),
+                    SmartPlaceLocationClient(context.applicationContext),
                 ) as T
             }
         }
+
+        private const val DEMO_PLACE_ID = "demo-hackathon-venue"
     }
 }

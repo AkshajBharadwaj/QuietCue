@@ -85,6 +85,15 @@ Show the state feed's latency fields for the last event (inference ms,
 total ms after capture). If QUAD benchmarks are in `docs/benchmarks/`,
 show the INT8-vs-baseline table as the final slide.
 
+### Optional feature beat — Smart Places (~30 s)
+
+In the Android app, open **Places**, choose **Create hackathon demo place**, and
+tap **Test arrival**. Return to **Home** and show the review card offering to
+switch to Work / School. Choose **Always switch here**, then test departure to
+show QuietCue return to the prior profile. This simulator does not require
+location permission or physical movement; real saved places use private on-phone
+Android geofences.
+
 ## Step F — Fallback if anything breaks on stage
 
 One command, zero dependencies, no network, no hardware:

@@ -74,7 +74,8 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 | Sound Scout observation + recurring-label discovery | `backend/telemetry/` | Done on computer hub; persisted metadata and reviewed label rules |
 | Uno Q live microphone + signal diagnostics | `uno_q/linux/audio_capture/` | Done: USB mic validated; no event inference on board |
 | Uno Q transport + hub selection | `uno_q/linux/transport/` | Done |
-| Android companion app | `frontend/android/` | Done (optional for demo) |
+| Android companion app | `frontend/android/` | Done: profiles, private context, Sound Scout, and smart-place suggestions (optional for demo) |
+| On-phone geofence context | `frontend/android/app/src/main/java/com/quietcue/app/location/` | Done: local-only place rules, arrival/departure suggestions, opt-in automation, and demo simulation |
 | Samsung TCP inference hub | `frontend/android/app/src/main/java/com/quietcue/app/phone/` | Done; quantized YAMNet on ONNX Runtime CPU |
 | STM32 haptic firmware + RPC server | `uno_q/stm32/` | Done; App Lab firmware 0.2.0 |
 | Linux-side RPC client (alert -> motor) | `uno_q/linux/rpc_client/` | Done; real App Lab Bridge transport |

@@ -112,6 +112,14 @@ and synchronize those approved hints to local speech inference. QuietCue does no
 generate or suggest memories from background conversations. See
 [`docs/IDENTITY_AND_MEMORY.md`](docs/IDENTITY_AND_MEMORY.md).
 
+The Android companion also supports **Smart profile suggestions** using locally
+stored phone geofences. A saved Home, Work, or School boundary can suggest its
+mapped profile on arrival and return to the previous profile on departure. Users
+can opt into automatic switching per place, while recent manual profile choices
+remain protected for two hours. A demo-only place provides deterministic arrival
+and departure buttons without GPS movement. See
+[`docs/SMART_PROFILE_SUGGESTIONS.md`](docs/SMART_PROFILE_SUGGESTIONS.md).
+
 ## First model: environmental sound classification
 
 The first working inference slice uses Google's pretrained YAMNet model. It takes

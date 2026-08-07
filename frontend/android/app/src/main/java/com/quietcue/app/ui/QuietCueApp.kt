@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,6 +31,7 @@ import com.quietcue.app.phone.PhoneInferenceStatus
 private enum class MainTab(val label: String) {
     HOME("Home"),
     PROFILES("Profiles"),
+    PLACES("Places"),
     MEMORY("My context"),
 }
 
@@ -50,6 +52,8 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
     val catalog by viewModel.catalog.collectAsStateWithLifecycle()
     val memoryBank by viewModel.memoryBank.collectAsStateWithLifecycle()
     val runtimeState by viewModel.runtimeState.collectAsStateWithLifecycle()
+    val smartProfileState by viewModel.smartProfileState.collectAsStateWithLifecycle()
+    val geofenceStatus by viewModel.geofenceStatus.collectAsStateWithLifecycle()
     val phoneInferenceState by PhoneInferenceStatus.state.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -187,6 +191,12 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                     label = { Text(MainTab.PROFILES.label) },
                 )
                 NavigationBarItem(
+                    selected = selectedTab == MainTab.PLACES,
+                    onClick = { selectedTabName = MainTab.PLACES.name },
+                    icon = { Icon(Icons.Rounded.LocationOn, contentDescription = null) },
+                    label = { Text(MainTab.PLACES.label) },
+                )
+                NavigationBarItem(
                     selected = selectedTab == MainTab.MEMORY,
                     onClick = { selectedTabName = MainTab.MEMORY.name },
                     icon = { Icon(Icons.Rounded.AccountCircle, contentDescription = null) },
@@ -214,6 +224,7 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
             MainTab.HOME -> DashboardScreen(
                 catalog = catalog,
                 runtimeState = runtimeState,
+                smartProfileState = smartProfileState,
                 phoneInferenceState = phoneInferenceState,
                 contentPadding = contentPadding,
                 onTeachDiscovery = { candidate ->
@@ -223,6 +234,9 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                 },
                 onAddDiscovery = viewModel::addDiscovery,
                 onDismissDiscovery = viewModel::dismissDiscovery,
+                onAcceptSmartSuggestion = { viewModel.acceptSmartProfileSuggestion(always = false) },
+                onAlwaysSmartSuggestion = { viewModel.acceptSmartProfileSuggestion(always = true) },
+                onDismissSmartSuggestion = viewModel::dismissSmartProfileSuggestion,
             )
             MainTab.PROFILES -> ProfilesScreen(
                 catalog = catalog,
@@ -244,6 +258,18 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                     creationFlowName = CreationFlow.SOUND_ENROLLMENT.name
                 },
                 onDeleteSound = viewModel::deleteEnrolledSound,
+            )
+            MainTab.PLACES -> SmartPlacesScreen(
+                catalog = catalog,
+                state = smartProfileState,
+                registrationStatus = geofenceStatus,
+                contentPadding = contentPadding,
+                onAddCurrentPlace = viewModel::addCurrentSmartPlace,
+                onAddDemoPlace = viewModel::addDemoSmartPlace,
+                onDeletePlace = viewModel::deleteSmartPlace,
+                onSetAutoApply = viewModel::setSmartPlaceAutoApply,
+                onSimulate = viewModel::simulateSmartPlace,
+                onRefresh = viewModel::refreshSmartPlaces,
             )
             MainTab.MEMORY -> MemoryBankScreen(
                 bank = memoryBank,
