@@ -7,6 +7,7 @@
 
   RPC surface (full contract in uno_q/stm32/README.md):
     play_haptic(pattern, intensity, repeat_count) -> bool
+    play_custom_haptic(steps, intensity, repeats) -> bool
     stop_haptic()                                 -> bool
     get_button_state()                            -> bool
     set_status_led(state)                         -> bool
@@ -32,7 +33,7 @@ static const uint8_t PIN_MOTOR = 6;       // PWM-capable output to the MOSFET ga
 static const uint8_t PIN_BUTTON = 2;      // Acknowledge button to GND, uses INPUT_PULLUP.
 static const uint8_t PIN_STATUS_LED = 4;  // Status LED through a ~220 ohm resistor.
 
-static const char FIRMWARE_VERSION[] = "quietcue-haptics/0.2.0";
+static const char FIRMWARE_VERSION[] = "quietcue-haptics/0.3.0";
 
 // A pattern is a fixed sequence of motor on/off steps; the whole sequence may
 // repeat. The final off time of a sequence doubles as the gap before the next
@@ -42,17 +43,24 @@ struct HapticStep {
   uint16_t off_ms;
 };
 
-// Informational alternatives: one quick pulse or two distinct quick pulses.
-static const HapticStep SHORT_PULSE_STEPS[] = {{140, 300}};
-static const HapticStep TWO_SHORT_STEPS[] = {{100, 100}, {100, 350}};
-// Attention: one longer pulse.
-static const HapticStep LONG_PULSE_STEPS[] = {{600, 400}};
+// Informational alternatives: one firm pulse or two distinct firm pulses.
+// The longer on-times are deliberately easier to feel through clothing while
+// retaining pulse count as the primary distinction between patterns.
+static const HapticStep SHORT_PULSE_STEPS[] = {{300, 260}};
+static const HapticStep TWO_SHORT_STEPS[] = {{240, 140}, {240, 320}};
+// Attention: one sustained pulse, clearly longer than the informational cues.
+static const HapticStep LONG_PULSE_STEPS[] = {{1000, 350}};
 // Emergency: urgent triple burst, repeated until acknowledged or timed out.
 static const HapticStep URGENT_STEPS[] = {{250, 100}, {250, 100}, {250, 400}};
 
 static const uint32_t URGENT_TIMEOUT_MS = 30000;
 static const int MAX_REPEAT_COUNT = 10;
-static const uint8_t MIN_INTENSITY = 60;  // Below this PWM level a coin motor may stall.
+static const uint8_t MAX_CUSTOM_STEPS = 6;
+static const uint16_t MIN_CUSTOM_ON_MS = 100;
+static const uint16_t MIN_CUSTOM_OFF_MS = 80;
+static const uint16_t MAX_CUSTOM_PHASE_MS = 2000;
+static const uint32_t MAX_CUSTOM_DURATION_MS = 10000;
+static const uint8_t MIN_INTENSITY = 180;  // Keep every cue above the tested perceptible range.
 static const uint32_t BUTTON_DEBOUNCE_MS = 30;
 static const uint16_t URGENT_LED_BLINK_MS = 150;
 
@@ -61,6 +69,7 @@ enum HapticPattern : uint8_t {
   PATTERN_SHORT_PULSE,
   PATTERN_TWO_SHORT,
   PATTERN_LONG_PULSE,
+  PATTERN_CUSTOM,
   PATTERN_URGENT_REPEAT,
 };
 
@@ -80,6 +89,8 @@ struct HapticState {
 };
 
 static HapticState haptic;
+static HapticStep custom_steps[MAX_CUSTOM_STEPS];
+static uint8_t custom_step_count = 0;
 static bool manual_led_state = false;
 static bool button_pressed = false;  // Debounced state, true while held.
 static bool button_raw_last = false;
@@ -149,6 +160,14 @@ static bool startPattern(HapticPattern pattern, int intensity, int repeat_count)
     case PATTERN_LONG_PULSE:
       steps = LONG_PULSE_STEPS;
       step_count = 1;
+      cycles = clampRepeat(repeat_count);
+      break;
+    case PATTERN_CUSTOM:
+      if (custom_step_count == 0) {
+        return false;
+      }
+      steps = custom_steps;
+      step_count = custom_step_count;
       cycles = clampRepeat(repeat_count);
       break;
     case PATTERN_URGENT_REPEAT:
@@ -252,6 +271,8 @@ static const char *patternName(HapticPattern pattern) {
       return "two_short";
     case PATTERN_LONG_PULSE:
       return "long_pulse";
+    case PATTERN_CUSTOM:
+      return "custom";
     case PATTERN_URGENT_REPEAT:
       return "urgent_repeat";
     default:
@@ -283,6 +304,85 @@ bool play_haptic(String pattern, int intensity, int repeat_count) {
     return false;
   }
   return startPattern(requested, intensity, repeat_count);
+}
+
+static bool parseCustomPhase(
+    const String &encoded,
+    int start,
+    int end,
+    uint16_t minimum,
+    uint16_t *result) {
+  if (start >= end || end - start > 4) {
+    return false;
+  }
+  uint32_t value = 0;
+  for (int index = start; index < end; index++) {
+    const char digit = encoded.charAt(index);
+    if (digit < '0' || digit > '9') {
+      return false;
+    }
+    value = value * 10 + (digit - '0');
+  }
+  if (value < minimum || value > MAX_CUSTOM_PHASE_MS) {
+    return false;
+  }
+  *result = (uint16_t)value;
+  return true;
+}
+
+bool play_custom_haptic(String encoded_steps, int intensity, int repeat_count) {
+  // Custom cues are finite and cannot interrupt an active emergency pattern.
+  if (haptic.pattern == PATTERN_URGENT_REPEAT ||
+      encoded_steps.length() == 0 || encoded_steps.length() > 79) {
+    return false;
+  }
+
+  HapticStep parsed[MAX_CUSTOM_STEPS];
+  uint8_t count = 0;
+  uint32_t total_duration_ms = 0;
+  int step_start = 0;
+  const int length = encoded_steps.length();
+  while (step_start < length) {
+    if (count >= MAX_CUSTOM_STEPS) {
+      return false;
+    }
+    int step_end = encoded_steps.indexOf(';', step_start);
+    if (step_end < 0) {
+      step_end = length;
+    }
+    const int comma = encoded_steps.indexOf(',', step_start);
+    const int extra_comma = comma < 0 ? -1 : encoded_steps.indexOf(',', comma + 1);
+    if (comma < 0 || comma >= step_end || (extra_comma >= 0 && extra_comma < step_end)) {
+      return false;
+    }
+    if (!parseCustomPhase(
+            encoded_steps, step_start, comma, MIN_CUSTOM_ON_MS, &parsed[count].on_ms) ||
+        !parseCustomPhase(
+            encoded_steps, comma + 1, step_end, MIN_CUSTOM_OFF_MS, &parsed[count].off_ms)) {
+      return false;
+    }
+    total_duration_ms += parsed[count].on_ms + parsed[count].off_ms;
+    if (total_duration_ms > MAX_CUSTOM_DURATION_MS) {
+      return false;
+    }
+    count++;
+    if (step_end == length) {
+      break;
+    }
+    if (step_end + 1 == length) {
+      return false;
+    }
+    step_start = step_end + 1;
+  }
+
+  if (count == 0) {
+    return false;
+  }
+  for (uint8_t index = 0; index < count; index++) {
+    custom_steps[index] = parsed[index];
+  }
+  custom_step_count = count;
+  return startPattern(PATTERN_CUSTOM, intensity, repeat_count);
 }
 
 bool stop_haptic() {
@@ -350,6 +450,7 @@ void setup() {
   // provide_safe dispatches the callbacks on the sketch thread so they can
   // touch the pattern engine state without locking.
   Bridge.provide_safe("play_haptic", play_haptic);
+  Bridge.provide_safe("play_custom_haptic", play_custom_haptic);
   Bridge.provide_safe("stop_haptic", stop_haptic);
   Bridge.provide_safe("set_motor_raw", set_motor_raw);
   Bridge.provide_safe("get_motor_pin", get_motor_pin);

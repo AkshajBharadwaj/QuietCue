@@ -71,6 +71,7 @@ class AppLabBridgeHapticTransportTest(unittest.TestCase):
 
         self.assertFalse(transport.get_button_state())
         self.assertTrue(transport.play_haptic("two_short", 100, 1))
+        self.assertTrue(transport.play_custom_haptic("300,100;500,200", 230, 1))
         self.assertEqual(starts, 1)
 
     def test_running_container_is_auto_detected(self) -> None:

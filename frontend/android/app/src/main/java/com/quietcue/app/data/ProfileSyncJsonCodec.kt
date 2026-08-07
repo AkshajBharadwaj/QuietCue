@@ -1,6 +1,7 @@
 package com.quietcue.app.data
 
 import com.quietcue.app.domain.MemoryBank
+import com.quietcue.app.domain.HapticPattern
 import com.quietcue.app.domain.ProfileCatalog
 import org.json.JSONArray
 import org.json.JSONObject
@@ -25,8 +26,7 @@ object ProfileSyncJsonCodec {
                 "sound_rules",
                 JSONArray().apply {
                     profile.soundRules.forEach { rule ->
-                        put(
-                            JSONObject()
+                        val ruleJson = JSONObject()
                                 .put("event", rule.soundId)
                                 .put("enabled", rule.enabled)
                                 .put("confidence_threshold", rule.confidenceThreshold.toDouble())
@@ -34,8 +34,27 @@ object ProfileSyncJsonCodec {
                                 .put("pattern", rule.hapticPattern.name.lowercase())
                                 .put("strength", rule.hapticStrength.name.lowercase())
                                 .put("requires_ack", rule.requiresAcknowledgement)
-                                .put("cooldown_seconds", rule.cooldownSeconds),
-                        )
+                                .put("cooldown_seconds", rule.cooldownSeconds)
+                        rule.customHapticPattern?.takeIf { rule.hapticPattern == HapticPattern.CUSTOM }?.let { custom ->
+                            ruleJson.put(
+                                "custom_pattern",
+                                JSONObject()
+                                    .put("name", custom.name)
+                                    .put(
+                                        "steps",
+                                        JSONArray().apply {
+                                            custom.steps.forEach { step ->
+                                                put(
+                                                    JSONObject()
+                                                        .put("on_ms", step.onMs)
+                                                        .put("off_ms", step.offMs),
+                                                )
+                                            }
+                                        },
+                                    ),
+                            )
+                        }
+                        put(ruleJson)
                     }
                 },
             )

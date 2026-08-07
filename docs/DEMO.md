@@ -20,10 +20,22 @@ reports the result to `/api/state`. Keep the no-hardware path ready as a stage
 fallback, but do not describe a motor alert as delivered until the state feed
 sets `simulated` to `false`.
 
+For a real live USB-microphone demo on macOS, Linux, or WSL, the preferred path
+is one command:
+
+```bash
+./scripts/run_demo.sh --live
+```
+
+It starts the ONNX hub and the Uno Q microphone/haptic client together. It
+auto-detects a single reachable board and USB capture device; add
+`--uno-host arduino@HOST` only if board discovery is ambiguous. A pairing token
+is optional for this short trusted-network mode.
+
 ## Demo script
 
-On macOS, Linux, or WSL, the hub, optional attached Android launch, and a complete
-fire-alarm plus Sound Scout replay can be started together:
+On macOS, Linux, or WSL, the hub, optional attached Android launch, and a
+deterministic fire-alarm replay can be started together:
 
 ```bash
 ./scripts/run_demo.sh --showcase

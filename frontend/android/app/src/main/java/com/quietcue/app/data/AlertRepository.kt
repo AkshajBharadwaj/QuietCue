@@ -4,9 +4,7 @@ import com.quietcue.app.domain.DetectedAlert
 import com.quietcue.app.domain.MemoryBank
 import com.quietcue.app.domain.RuntimeState
 import com.quietcue.app.domain.ProfileCatalog
-import com.quietcue.app.domain.SoundDiscoveryCandidate
 import java.net.HttpURLConnection
-import java.net.URLEncoder
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -51,71 +49,15 @@ class AlertRepository(
         }
     }
 
-    suspend fun updateDiscovery(candidateId: String, action: String) = withContext(Dispatchers.IO) {
-        require(action == "dismiss" || action == "taught") { "Unsupported discovery action" }
-        val encodedId = URLEncoder.encode(candidateId, Charsets.UTF_8.name())
-        val state = URL(stateUrl)
-        val endpoint = URL(state.protocol, state.host, state.port, "/api/discoveries/$encodedId")
-        val document = JSONObject().put("action", action).toString().toByteArray(Charsets.UTF_8)
-        val connection = endpoint.openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "POST"
-            connection.connectTimeout = 1_000
-            connection.readTimeout = 1_000
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            connection.setFixedLengthStreamingMode(document.size)
-            connection.outputStream.use { it.write(document) }
-            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
-                "Discovery action returned HTTP ${connection.responseCode}"
-            }
-            connection.inputStream.close()
-        } finally {
-            connection.disconnect()
-        }
-    }
-
     internal fun parseState(json: JSONObject): RuntimeState {
         val hub = json.optJSONObject("hub")
         val profile = json.optJSONObject("active_profile")
         val alertJson = json.optJSONObject("latest_alert")
-        val discoveryJson = json.optJSONObject("discoveries")
-        val candidateJson = discoveryJson?.optJSONArray("candidates")
-        val discoveries = buildList {
-            if (candidateJson != null) {
-                repeat(candidateJson.length()) { index ->
-                    candidateJson.optJSONObject(index)?.let { add(parseDiscovery(it)) }
-                }
-            }
-        }
         return RuntimeState(
             backendConnected = json.optString("status") == "ready",
             audioSourceConnected = hub?.optBoolean("audio_source_connected") == true,
             backendProfileName = profile?.optString("name")?.takeIf(String::isNotBlank),
             latestAlert = alertJson?.let(::parseAlert),
-            discoveries = discoveries,
-            pendingDiscoveryCount = discoveryJson?.optInt("pending_count", 0) ?: 0,
-        )
-    }
-
-    private fun parseDiscovery(json: JSONObject): SoundDiscoveryCandidate {
-        val profileJson = json.optJSONArray("profile_names")
-        val profileNames = buildList {
-            if (profileJson != null) {
-                repeat(profileJson.length()) { index ->
-                    profileJson.optString(index).takeIf(String::isNotBlank)?.let(::add)
-                }
-            }
-        }
-        return SoundDiscoveryCandidate(
-            id = json.optString("id"),
-            label = json.optString("label", "Unknown sound"),
-            episodes = json.optInt("episodes", 0),
-            firstSeenMs = json.optLong("first_seen_ms", 0),
-            lastSeenMs = json.optLong("last_seen_ms", 0),
-            meanConfidence = json.optDouble("mean_confidence", 0.0).toFloat(),
-            maxConfidence = json.optDouble("max_confidence", 0.0).toFloat(),
-            profileNames = profileNames,
         )
     }
 

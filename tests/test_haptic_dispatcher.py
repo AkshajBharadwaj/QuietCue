@@ -17,6 +17,10 @@ class FakeHapticTransport:
         self.calls.append(("play_haptic", pattern, intensity, repeat_count))
         return True
 
+    def play_custom_haptic(self, encoded_steps: str, intensity: int, repeat_count: int) -> bool:
+        self.calls.append(("play_custom_haptic", encoded_steps, intensity, repeat_count))
+        return True
+
     def stop_haptic(self) -> bool:
         self.calls.append(("stop_haptic",))
         return True
@@ -50,6 +54,7 @@ def _alert(
     requires_ack: bool = False,
     event_id: str | None = None,
     strength: str | None = None,
+    custom_pattern: str | None = None,
 ) -> dict[str, object]:
     alert: dict[str, object] = {
         "event": event,
@@ -62,6 +67,8 @@ def _alert(
         alert["event_id"] = event_id
     if strength is not None:
         alert["strength"] = strength
+    if custom_pattern is not None:
+        alert["custom_pattern"] = custom_pattern
     return alert
 
 
@@ -79,24 +86,41 @@ class AlertDispatcherTest(unittest.TestCase):
         self.assertTrue(outcome.delivered)
         self.assertIn(("play_haptic", "urgent_repeat", 255, 0), self.transport.calls)
 
-    def test_informational_alert_uses_two_short_at_reduced_intensity(self) -> None:
+    def test_informational_alert_uses_two_short_at_perceptible_intensity(self) -> None:
         outcome = self.dispatcher.dispatch(
             _alert(event="kitchen_timer", category="informational", pattern="two_short")
         )
 
         self.assertTrue(outcome.delivered)
-        self.assertIn(("play_haptic", "two_short", 100, 1), self.transport.calls)
+        self.assertIn(("play_haptic", "two_short", 190, 1), self.transport.calls)
 
     def test_unknown_category_falls_back_to_informational_plan(self) -> None:
         outcome = self.dispatcher.dispatch(_alert(category="mystery", pattern="long_pulse"))
 
         self.assertTrue(outcome.delivered)
-        self.assertIn(("play_haptic", "long_pulse", 100, 1), self.transport.calls)
+        self.assertIn(("play_haptic", "long_pulse", 190, 1), self.transport.calls)
 
     def test_profile_strength_maps_to_firmware_pwm_range(self) -> None:
         self.dispatcher.dispatch(_alert(strength="strong"))
 
         self.assertIn(("play_haptic", "long_pulse", 255, 1), self.transport.calls)
+
+    def test_custom_pattern_dispatches_recorded_steps(self) -> None:
+        outcome = self.dispatcher.dispatch(
+            _alert(pattern="custom", strength="standard", custom_pattern="420,180;650,200")
+        )
+
+        self.assertTrue(outcome.delivered)
+        self.assertIn(
+            ("play_custom_haptic", "420,180;650,200", 230, 1),
+            self.transport.calls,
+        )
+
+    def test_custom_pattern_without_steps_is_rejected_as_transport_error(self) -> None:
+        outcome = self.dispatcher.dispatch(_alert(pattern="custom"))
+
+        self.assertFalse(outcome.delivered)
+        self.assertEqual(outcome.reason, "transport_error")
 
     def test_repeated_event_within_cooldown_is_suppressed(self) -> None:
         first = self.dispatcher.dispatch(_alert())

@@ -151,6 +151,7 @@ class PhoneProfileDecisionEngine(private val profileProvider: () -> AlertProfile
                     .put("category", rule.priority.name.lowercase())
                     .put("confidence", event.confidence)
                     .put("pattern", rule.hapticPattern.name.lowercase())
+                    .put("custom_pattern", rule.customHapticPattern?.encodedSteps.orEmpty())
                     .put("strength", rule.hapticStrength.name.lowercase())
                     .put("requires_ack", rule.requiresAcknowledgement)
                     .put("profile_id", profile.id)

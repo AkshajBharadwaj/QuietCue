@@ -16,11 +16,12 @@ from Linux with `Bridge.call(name, ...)`.
 | Method | Arguments | Returns | Notes |
 | --- | --- | --- | --- |
 | `play_haptic` | `pattern: str, intensity: int, repeat_count: int` | `bool` | `False` for unknown patterns or when refused by priority. |
+| `play_custom_haptic` | `steps: str, intensity: int, repeat_count: int` | `bool` | Plays touch-recorded `on,off;...` timings after strict bounds checking. |
 | `stop_haptic` | — | `bool` | Always stops the motor. |
 | `get_button_state` | — | `bool` | Debounced; `True` while the acknowledge button is held. |
 | `set_status_led` | `state: bool` | `bool` | Manual LED control; overridden by the emergency blink. |
 | `get_motor_pin` | — | `bool` | Reads back the physical motor-pin level (real pad sample) for bench debugging. |
-| `get_firmware_version` | — | `str` | `quietcue-haptics/0.2.0` |
+| `get_firmware_version` | — | `str` | `quietcue-haptics/0.3.0` |
 | `health_check` | — | `str` | Compact JSON: active pattern, button, uptime, counters. |
 
 The firmware also emits a fire-and-forget event to the Linux side when an
@@ -29,23 +30,27 @@ optional; polling `get_button_state` works too.
 
 ### Patterns
 
-Four small patterns cover the haptic language in `AGENTS.md`:
+The built-in patterns retain different pulse counts and rhythms even though
+their motor-on time has been increased:
 
 | Pattern | Category | Behavior |
 | --- | --- | --- |
-| `short_pulse` | informational | One quick 140 ms pulse. |
-| `two_short` | informational | Two 100 ms pulses. |
-| `long_pulse` | attention | One 600 ms pulse. |
+| `short_pulse` | informational | One firm 300 ms pulse. |
+| `two_short` | informational | Two distinct 240 ms pulses with a 140 ms gap. |
+| `long_pulse` | attention | One sustained 1000 ms pulse. |
 | `urgent_repeat` | emergency | Repeating triple bursts until the acknowledge button is pressed or a 30 s timeout expires. |
+| `custom` | personal | One to six touch-recorded pulses, played once unless an explicit repeat count is supplied. |
 
 Rules:
 
-- `intensity` is PWM 1–255; values below 60 are raised to 60 so a coin motor
+- `intensity` is PWM 1–255; values below 180 are raised to 180 so a coin motor
   does not stall; `0` means full power.
+- Custom timing accepts 1–6 steps, 100–2000 ms motor-on phases, 80–2000 ms
+  pauses, and at most 10 seconds total. Invalid encodings are refused.
 - `repeat_count` is clamped to 1–10. For `urgent_repeat`, `0` (the normal case)
   means "until acknowledged or timed out".
-- Priority: while `urgent_repeat` is active, `play_haptic` refuses `two_short`
-  and `long_pulse` (returns `False`). A new `urgent_repeat` restarts the
+- Priority: while `urgent_repeat` is active, the firmware refuses lower-priority
+  built-in and custom patterns (returns `False`). A new `urgent_repeat` restarts the
   emergency pattern. `stop_haptic` always wins.
 - All timing is a `millis()`-based state machine in `loop()`; the RPC path
   never blocks and never calls `delay()`.

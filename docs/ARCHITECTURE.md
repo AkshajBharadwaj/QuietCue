@@ -34,7 +34,7 @@ Uno Q Linux side  --Arduino RPC-->  STM32
                                     - ack button, status LED
     |
     v
-Haptic feedback (two_short / long_pulse / urgent_repeat)
+Haptic feedback (two_short / long_pulse / urgent_repeat / bounded custom)
 ```
 
 ## Device responsibilities
@@ -54,11 +54,13 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
   `pcm_s16le` payload, signal diagnostics, phrase_triggers) -> `detection_result`
   per chunk. Heartbeats supported.
 - **Alerts down:** each `detection_result` carries decided alerts
-  (`event`, `category`, `pattern`, `requires_ack`, confidence, profile).
+  (`event`, `category`, `pattern`, optional bounded `custom_pattern`,
+  `requires_ack`, confidence, profile).
 - **State API:** HTTP on port 8787 (`/health`, `/api/state`, profile sync
   endpoint used by the Android app).
-- **Haptic categories:** informational `short_pulse` or `two_short`, attention `long_pulse`,
-  emergency `urgent_repeat` (repeats until acknowledged).
+- **Haptic categories:** informational `short_pulse` or `two_short`, attention
+  `long_pulse`, emergency `urgent_repeat` (repeats until acknowledged), plus
+  user-recorded finite custom patterns with one to six pulses.
 - **Hardware result:** the Uno Q sends `haptic_result` after dispatch so the
   hub records delivery, bridge health, and acknowledgement state.
 
@@ -71,13 +73,12 @@ Haptic feedback (two_short / long_pulse / urgent_repeat)
 | YAMNet baseline classifier | `backend/inference/sound_classifier.py` | Done (baseline, not safety-certified) |
 | Gated speech path (Faster-Whisper) | `backend/inference/speech.py` | Done |
 | Profiles, quiet hours, enrollment, identity context | `backend/profiles/` | Done |
-| Sound Scout observation + recurring-label discovery | `backend/telemetry/` | Done on computer hub; persisted metadata and reviewed label rules |
 | Uno Q live microphone + signal diagnostics | `uno_q/linux/audio_capture/` | Done: USB mic validated; no event inference on board |
 | Uno Q transport + hub selection | `uno_q/linux/transport/` | Done |
-| Android companion app | `frontend/android/` | Done: profiles, private context, Sound Scout, and smart-place suggestions (optional for demo) |
+| Android companion app | `frontend/android/` | Done: profiles, private context, custom haptics, and smart-place suggestions (optional for demo) |
 | On-phone geofence context | `frontend/android/app/src/main/java/com/quietcue/app/location/` | Done: local-only place rules, arrival/departure suggestions, opt-in automation, and demo simulation |
 | Samsung TCP inference hub | `frontend/android/app/src/main/java/com/quietcue/app/phone/` | Done; quantized YAMNet on ONNX Runtime CPU |
-| STM32 haptic firmware + RPC server | `uno_q/stm32/` | Done; App Lab firmware 0.2.0 |
+| STM32 haptic firmware + RPC server | `uno_q/stm32/` | Done; App Lab firmware 0.3.0 with bounded custom patterns |
 | Linux-side RPC client (alert -> motor) | `uno_q/linux/rpc_client/` | Done; real App Lab Bridge transport |
 | Board restart/reconnect lifecycle | `scripts/run_uno_q_client.sh`, `uno_q/linux/systemd/` | Done |
 | Converted/quantized models | `models/` | Done: W8A8 ONNX + 3.63 MB INT8 DLC checked in |
@@ -97,8 +98,6 @@ always enables haptics and reports the actual firmware result to the hub.
 - Wi-Fi for audio streaming; BLE only later for small commands.
 - Safety-critical detection stays local; cloud AI (if any) is advisory only.
 - Speech transcription is gated and never blocks environmental detection.
-- Recurring unmapped classifier labels are advisory discoveries and never trigger
-  emergency behavior or retain raw audio.
 - Few haptic patterns: urgency lives in the pattern, the exact event lives in
   the app.
 - Report both model latency and full user-perceived latency.

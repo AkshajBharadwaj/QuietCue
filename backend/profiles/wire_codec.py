@@ -16,7 +16,7 @@ from backend.profiles.speech_context import KnownPerson, ManualContext, SpeechCo
 
 
 _CATEGORIES = {"informational", "attention", "emergency"}
-_PATTERNS = {"short_pulse", "two_short", "long_pulse", "urgent_repeat"}
+_PATTERNS = {"short_pulse", "two_short", "long_pulse", "urgent_repeat", "custom"}
 _STRENGTHS = {"gentle", "standard", "strong"}
 
 
@@ -49,6 +49,7 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
         category = _choice(item, "category", _CATEGORIES)
         pattern = _choice(item, "pattern", _PATTERNS)
         strength = _choice(item, "strength", _STRENGTHS)
+        custom_pattern = _decode_custom_pattern(item.get("custom_pattern")) if pattern == "custom" else ""
         rules.append(
             SoundRule(
                 event=event,
@@ -59,6 +60,7 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
                 strength=strength,
                 requires_ack=bool(item.get("requires_ack", False)),
                 cooldown_seconds=_bounded_int(item.get("cooldown_seconds", 20), 0, 120),
+                custom_pattern=custom_pattern,
             )
         )
 
@@ -173,6 +175,28 @@ def _decode_speech_context(value: Any) -> SpeechContext:
             )
         )
     return SpeechContext(identity=identity, people=tuple(people), contexts=tuple(contexts))
+
+
+def _decode_custom_pattern(value: Any) -> str:
+    if not isinstance(value, dict):
+        raise ValueError("custom_pattern must be an object for a custom haptic pattern")
+    _required_text(value, "name", 30)
+    steps = value.get("steps")
+    if not isinstance(steps, list) or not 1 <= len(steps) <= 6:
+        raise ValueError("custom_pattern.steps must contain between 1 and 6 pulses")
+
+    encoded_steps: list[str] = []
+    total_duration_ms = 0
+    for step in steps:
+        if not isinstance(step, dict):
+            raise ValueError("Each custom haptic step must be an object")
+        on_ms = _bounded_int(step.get("on_ms"), 100, 2_000)
+        off_ms = _bounded_int(step.get("off_ms"), 80, 2_000)
+        total_duration_ms += on_ms + off_ms
+        encoded_steps.append(f"{on_ms},{off_ms}")
+    if total_duration_ms > 10_000:
+        raise ValueError("custom_pattern must be no longer than 10 seconds")
+    return ";".join(encoded_steps)
 
 
 def _required_text(document: dict[str, Any], key: str, maximum: int) -> str:

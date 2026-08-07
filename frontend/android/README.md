@@ -12,6 +12,9 @@ deliver to the STM32 haptic firmware.
 - Persistent active-profile selection and profile settings through DataStore.
 - Per-sound enablement, confidence threshold, priority, haptic pattern, haptic
   strength, acknowledgement, and repeat cooldown.
+- A touch-driven vibration creator: hold for motor-on time, release for pauses,
+  preview the result on the phone, and save a bounded one-to-six-pulse pattern
+  to any sound rule.
 - Quiet hours with an unconditional emergency bypass.
 - Name and phrase triggers.
 - Optional activity and location labels for future automatic profile activation.
@@ -30,9 +33,6 @@ deliver to the STM32 haptic firmware.
   heartbeats, profile decisions, alert commands, and haptic delivery results.
 - On-device 16 kHz YAMNet feature extraction and environmental-event mapping for
   fire alarms, sirens, horns, doorbells/knocks, crying babies, timers, and phones.
-- Sound Scout cards from the computer hub after three distinct high-confidence
-  episodes of an unmapped label, with reviewed direct-to-profile, dismiss, and
-  prefilled custom-enrollment actions.
 - A Smart Places tab with private on-phone place boundaries, Android geofence
   arrival/departure events, ask-first profile suggestions, opt-in automatic
   switching, return-to-previous-profile behavior, and two-hour manual overrides.
@@ -43,8 +43,7 @@ The phone inference service starts when the app opens and remains visible as a
 foreground notification. The dashboard shows whether the model is ready, whether
 an Uno Q is connected, and the latest phone inference latency. It also polls the
 computer development backend at `http://127.0.0.1:8787/api/state` when available.
-Full event history and haptic preview remain future work; Sound Scout candidates,
-local profile editing,
+Full event history remains future work; local profile editing,
 profile drafting, and enrollment storage continue to work without a backend
 connection. Recognition of an enrolled sound requires the hub connection.
 
@@ -72,6 +71,11 @@ Install a debug build on a connected device with:
 ```bash
 ./gradlew installDebug
 ```
+
+To create a personal vibration, open **Profiles**, edit a profile, expand a
+sound, and choose **Custom** or **Create touch pattern** under Haptic pattern.
+Recorded patterns are validated on the phone, hub, and STM32 before they can
+reach the motor.
 
 ## Use the Samsung as the inference hub
 

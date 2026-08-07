@@ -28,7 +28,7 @@ class SoundLibraryJsonCodecTest {
         val sound = SoundDefinition(
             id = "custom:label:vacuum",
             displayName = "Vacuum cleaner",
-            description = "Found by Sound Scout",
+            description = "Classifier-label match",
             defaultPriority = AlertPriority.INFORMATIONAL,
             defaultHapticPattern = HapticPattern.TWO_SHORT,
             defaultHapticStrength = HapticStrength.GENTLE,

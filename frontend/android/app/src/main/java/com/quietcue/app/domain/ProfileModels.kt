@@ -56,12 +56,43 @@ enum class HapticPattern(val displayName: String, val description: String) {
     TWO_SHORT("Two short", "Two distinct quick pulses"),
     LONG_PULSE("Long pulse", "One sustained attention pulse"),
     URGENT_REPEAT("Urgent repeat", "Repeated pulses until acknowledged or timed out"),
+    CUSTOM("Custom", "A touch-recorded personal vibration"),
 }
 
 enum class HapticStrength(val displayName: String) {
     GENTLE("Gentle"),
     STANDARD("Standard"),
     STRONG("Strong"),
+}
+
+data class CustomHapticStep(
+    val onMs: Int,
+    val offMs: Int,
+) {
+    fun isValid(): Boolean = onMs in MIN_ON_MS..MAX_PHASE_MS && offMs in MIN_OFF_MS..MAX_PHASE_MS
+
+    companion object {
+        const val MIN_ON_MS = 100
+        const val MIN_OFF_MS = 80
+        const val MAX_PHASE_MS = 2_000
+    }
+}
+
+data class CustomHapticPattern(
+    val name: String,
+    val steps: List<CustomHapticStep>,
+) {
+    val totalDurationMs: Int get() = steps.sumOf { it.onMs + it.offMs }
+    val encodedSteps: String get() = steps.joinToString(";") { "${it.onMs},${it.offMs}" }
+
+    fun isValid(): Boolean = name.isNotBlank() && name.length <= 30 &&
+        steps.size in 1..MAX_STEPS && steps.all(CustomHapticStep::isValid) &&
+        totalDurationMs <= MAX_TOTAL_MS
+
+    companion object {
+        const val MAX_STEPS = 6
+        const val MAX_TOTAL_MS = 10_000
+    }
 }
 
 data class SoundEnrollment(
@@ -87,8 +118,7 @@ data class SoundDefinition(
     val classifierLabels: List<String> = emptyList(),
 ) {
     val isEnrolled: Boolean get() = enrollment != null
-    val isDiscovered: Boolean get() = classifierLabels.isNotEmpty()
-    val isCustom: Boolean get() = isEnrolled || isDiscovered
+    val isCustom: Boolean get() = isEnrolled || classifierLabels.isNotEmpty()
 }
 
 object SoundLibrary {
@@ -176,6 +206,7 @@ data class SoundRule(
     val hapticStrength: HapticStrength,
     val requiresAcknowledgement: Boolean,
     val cooldownSeconds: Int,
+    val customHapticPattern: CustomHapticPattern? = null,
 )
 
 data class AlertProfile(

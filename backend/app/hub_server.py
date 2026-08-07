@@ -21,7 +21,6 @@ from backend.profiles.defaults import all_profiles, get_profile
 from backend.profiles.engine import DecisionResult, ProfileDecisionEngine
 from backend.profiles.wire_codec import decode_profile
 from backend.telemetry.alert_store import AlertStateStore
-from backend.telemetry.sound_discovery import SoundDiscoveryTracker
 
 
 LOGGER = logging.getLogger("quietcue.hub")
@@ -291,18 +290,13 @@ async def serve(
     classifier: str,
     profile_id: str,
     event_log: Path | None,
-    discovery_state: Path | None,
     speech_model: str,
     speech_device: str,
     speech_compute_type: str,
     speech_language: str,
 ) -> None:
     profile = get_profile(profile_id)
-    state_store = AlertStateStore(
-        profile,
-        jsonl_path=event_log,
-        discovery_tracker=SoundDiscoveryTracker(state_path=discovery_state),
-    )
+    state_store = AlertStateStore(profile, jsonl_path=event_log)
     decision_engine = ProfileDecisionEngine(profile)
     custom_matcher = CustomSoundMatcher(profile.custom_sounds)
     classifier_label_matcher = ClassifierLabelMatcher(profile.classifier_label_rules)
@@ -342,7 +336,6 @@ async def serve(
     status = StatusHttpServer(
         state_store.snapshot,
         update_profile=update_profile,
-        update_discovery=state_store.update_discovery,
     )
     audio_server = await asyncio.start_server(hub.handle_client, host, port)
     state_server = await asyncio.start_server(status.handle_client, state_host, state_port)
@@ -402,12 +395,6 @@ def _parse_args() -> argparse.Namespace:
         help="Optional metadata-only JSONL event log (raw audio is never written)",
     )
     parser.add_argument(
-        "--discovery-state",
-        type=Path,
-        default=Path(os.environ.get("QUIETCUE_DISCOVERY_STATE", ".quietcue/discovery_state.json")),
-        help="Metadata-only Sound Scout state (default: .quietcue/discovery_state.json)",
-    )
-    parser.add_argument(
         "--pairing-token",
         default=os.environ.get("QUIETCUE_PAIRING_TOKEN", ""),
         help="Shared development token; defaults to QUIETCUE_PAIRING_TOKEN",
@@ -431,7 +418,6 @@ def main() -> None:
                 args.classifier,
                 args.profile,
                 args.event_log,
-                args.discovery_state,
                 args.speech_model.strip(),
                 args.speech_device,
                 args.speech_compute_type,

@@ -117,7 +117,7 @@ fun ProfilesScreen(
                             Text(
                                 sound.enrollment?.let {
                                     "${it.positiveSampleCount} examples • experimental local match"
-                                } ?: "Sound Scout label • reviewable classifier match",
+                                } ?: "Classifier-label match",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }

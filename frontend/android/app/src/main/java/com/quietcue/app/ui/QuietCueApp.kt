@@ -61,7 +61,6 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
     val selectedTab = MainTab.valueOf(selectedTabName)
     var editorProfileJson by rememberSaveable { mutableStateOf<String?>(null) }
     var creationFlowName by rememberSaveable { mutableStateOf<String?>(null) }
-    var enrollmentDiscoveryId by rememberSaveable { mutableStateOf<String?>(null) }
     var enrollmentSuggestedName by rememberSaveable { mutableStateOf("") }
     var memoryEditorFlowName by rememberSaveable { mutableStateOf<String?>(null) }
     var memoryEditorItemId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -101,13 +100,11 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
             }.orEmpty(),
             onBack = {
                 creationFlowName = null
-                enrollmentDiscoveryId = null
                 enrollmentSuggestedName = ""
             },
             onEnroll = { sound ->
-                viewModel.enrollSound(sound, enrollmentDiscoveryId)
+                viewModel.enrollSound(sound)
                 creationFlowName = null
-                enrollmentDiscoveryId = null
                 enrollmentSuggestedName = ""
             },
         )
@@ -227,13 +224,6 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                 smartProfileState = smartProfileState,
                 phoneInferenceState = phoneInferenceState,
                 contentPadding = contentPadding,
-                onTeachDiscovery = { candidate ->
-                    enrollmentDiscoveryId = candidate.id
-                    enrollmentSuggestedName = candidate.label.take(40)
-                    creationFlowName = CreationFlow.SOUND_ENROLLMENT.name
-                },
-                onAddDiscovery = viewModel::addDiscovery,
-                onDismissDiscovery = viewModel::dismissDiscovery,
                 onAcceptSmartSuggestion = { viewModel.acceptSmartProfileSuggestion(always = false) },
                 onAlwaysSmartSuggestion = { viewModel.acceptSmartProfileSuggestion(always = true) },
                 onDismissSmartSuggestion = viewModel::dismissSmartProfileSuggestion,
@@ -253,7 +243,6 @@ fun QuietCueApp(viewModel: ProfileViewModel) {
                 onReset = viewModel::reset,
                 onGenerateFromText = { creationFlowName = CreationFlow.PROFILE_AGENT.name },
                 onEnrollSound = {
-                    enrollmentDiscoveryId = null
                     enrollmentSuggestedName = ""
                     creationFlowName = CreationFlow.SOUND_ENROLLMENT.name
                 },

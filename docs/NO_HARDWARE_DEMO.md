@@ -33,14 +33,6 @@ Supported synthetic events are `doorbell_knock`, `car_horn`, `fire_alarm`,
 `siren`, `baby_crying`, `kitchen_timer`, and `phone_ringing`. Backend profiles are
 `home`, `work`, `driving`, `sleep`, and `emergency`.
 
-The additional `vacuum_cleaner` fixture is intentionally unmapped. It exercises
-Sound Scout by replaying three separate episodes and producing a discovery
-candidate instead of an alert:
-
-```bash
-python3 scripts/run_no_hardware_demo.py --event vacuum_cleaner --profile home
-```
-
 For example, Home deliberately suppresses a car horn while Driving turns it into
 an emergency alert:
 
