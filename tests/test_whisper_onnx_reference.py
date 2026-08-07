@@ -5,7 +5,10 @@ import json
 import unittest
 from pathlib import Path
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError as exc:  # Optional Whisper/ONNX verification dependency.
+    raise unittest.SkipTest("numpy is an optional Whisper ONNX test dependency") from exc
 
 from scripts.whisper_onnx_reference import (
     MEL_BANDS,

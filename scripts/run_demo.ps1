@@ -2,12 +2,13 @@
 #
 # Examples:
 #   .\scripts\run_demo.ps1                                  # dependency-free demo classifier
-#   .\scripts\run_demo.ps1 -Classifier yamnet               # real YAMNet classifier (installs TensorFlow)
+#   .\scripts\run_demo.ps1 -Classifier onnx                 # checked-in ONNX model (recommended)
+#   .\scripts\run_demo.ps1 -Classifier yamnet               # TF Hub YAMNet baseline
 #   .\scripts\run_demo.ps1 -SpeechModel tiny.en             # add gated Faster-Whisper speech path
 #   .\scripts\run_demo.ps1 -BindHost 0.0.0.0                # accept the Uno Q over the LAN/Tailscale
 [CmdletBinding()]
 param(
-    [ValidateSet("demo", "yamnet")]
+    [ValidateSet("demo", "yamnet", "onnx")]
     [string]$Classifier = "demo",
 
     [ValidateSet("home", "work", "driving", "sleep", "emergency")]
@@ -41,6 +42,12 @@ if ($Classifier -eq "yamnet") {
     Write-Host "Installing YAMNet dependencies (backend\requirements.txt) ..."
     & $venvPython -m pip install --quiet --upgrade pip
     & $venvPython -m pip install --quiet -r backend\requirements.txt
+    if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
+}
+if ($Classifier -eq "onnx") {
+    Write-Host "Installing ONNX dependencies (backend\requirements-onnx.txt) ..."
+    & $venvPython -m pip install --quiet --upgrade pip
+    & $venvPython -m pip install --quiet -r backend\requirements-onnx.txt
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
 }
 if (-not $NoSpeech -and $SpeechModel -ne "") {
