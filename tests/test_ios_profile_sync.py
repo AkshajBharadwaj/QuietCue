@@ -27,8 +27,10 @@ def test_ios_profile_document_decodes_with_hub_codec() -> None:
     assert profile.phrase_triggers == ("front desk", "Akshaj")
     assert len(profile.sound_rules) == 8
 
-    fire_alarm = profile.rule_for("fire_alarm")
+    # The fixture still carries the pre-rebuild id; the hub maps it to "alarm".
+    fire_alarm = profile.rule_for("alarm")
     assert fire_alarm is not None
+    assert profile.rule_for("fire_alarm") is None
     assert fire_alarm.pattern == "custom"
     assert fire_alarm.custom_pattern == "180,120;420,300"
     assert fire_alarm.category == "emergency"

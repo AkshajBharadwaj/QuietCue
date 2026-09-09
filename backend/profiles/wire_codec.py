@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from backend.inference.sound_catalog import canonical_event
 from backend.profiles.engine import (
     AlertProfile,
     ClassifierLabelRule,
@@ -55,7 +56,8 @@ def decode_profile(document: dict[str, Any]) -> AlertProfile:
     for item in rules_document:
         if not isinstance(item, dict):
             raise ValueError("Each sound rule must be an object")
-        event = _required_text(item, "event", 100)
+        # Older clients (the Android app) still send fire_alarm/kitchen_timer.
+        event = canonical_event(_required_text(item, "event", 100))
         if event in seen_events:
             raise ValueError(f"Duplicate sound rule: {event}")
         seen_events.add(event)

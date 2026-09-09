@@ -22,7 +22,7 @@ from backend.profiles.defaults import all_profiles  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--event", choices=tuple(EVENT_FREQUENCIES), default="fire_alarm")
+    parser.add_argument("--event", choices=tuple(EVENT_FREQUENCIES), default="alarm")
     parser.add_argument("--profile", choices=tuple(all_profiles()), default="home")
     args = parser.parse_args()
 

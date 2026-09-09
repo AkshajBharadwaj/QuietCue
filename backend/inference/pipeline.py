@@ -8,6 +8,7 @@ from typing import Protocol
 
 from backend.inference.event_mapper import MappedEvent, map_predictions
 from backend.inference.models import SoundPrediction
+from backend.inference.sound_catalog import default_category
 from backend.inference.speech import (
     BufferedSpeechRecognizer,
     SpeechTranscriber,
@@ -180,12 +181,13 @@ class HubInferencePipeline:
 
 
 def _confirmed_event(event: MappedEvent) -> ConfirmedEvent:
-    if event.event in {"fire_alarm", "siren"}:
-        category, pattern, requires_ack = "emergency", "urgent_repeat", True
-    elif event.event in {"car_horn", "doorbell_knock", "baby_crying"}:
-        category, pattern, requires_ack = "attention", "long_pulse", False
+    category = default_category(event.event)
+    if category == "emergency":
+        pattern, requires_ack = "urgent_repeat", True
+    elif category == "attention":
+        pattern, requires_ack = "long_pulse", False
     else:
-        category, pattern, requires_ack = "informational", "two_short", False
+        pattern, requires_ack = "two_short", False
     return ConfirmedEvent(
         event=event.event,
         confidence=round(event.confidence, 4),

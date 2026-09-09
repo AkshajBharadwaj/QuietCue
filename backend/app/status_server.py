@@ -15,7 +15,7 @@ class StatusHttpServer:
         update_profile: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         stop_haptic: Callable[[str | None], dict[str, Any]] | None = None,
         update_inference_device: Callable[[str], dict[str, Any]] | None = None,
-        start_enrollment: Callable[[int], dict[str, Any]] | None = None,
+        start_enrollment: Callable[[int, int], dict[str, Any]] | None = None,
         enrollment_status: Callable[[], dict[str, Any]] | None = None,
         cancel_enrollment: Callable[[], dict[str, Any]] | None = None,
         start_name_enrollment: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
@@ -111,9 +111,12 @@ class StatusHttpServer:
                         raise ValueError("Enrollment command must be an object")
                     document = decoded
                 duration_ms = document.get("duration_ms", 10_000)
-                if not isinstance(duration_ms, int):
+                if not isinstance(duration_ms, int) or isinstance(duration_ms, bool):
                     raise ValueError("duration_ms must be an integer")
-                await self._respond(writer, 200, self._start_enrollment(duration_ms))
+                min_repeats = document.get("min_repeats", 3)
+                if not isinstance(min_repeats, int) or isinstance(min_repeats, bool):
+                    raise ValueError("min_repeats must be an integer")
+                await self._respond(writer, 200, self._start_enrollment(duration_ms, min_repeats))
             elif (
                 method == "POST"
                 and path == "/api/enrollment/cancel"

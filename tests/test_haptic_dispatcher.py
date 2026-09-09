@@ -80,7 +80,7 @@ class AlertDispatcherTest(unittest.TestCase):
 
     def test_emergency_alert_maps_to_urgent_repeat_at_full_intensity(self) -> None:
         outcome = self.dispatcher.dispatch(
-            _alert(event="fire_alarm", category="emergency", pattern="urgent_repeat", requires_ack=True)
+            _alert(event="alarm", category="emergency", pattern="urgent_repeat", requires_ack=True)
         )
 
         self.assertTrue(outcome.delivered)
@@ -88,7 +88,7 @@ class AlertDispatcherTest(unittest.TestCase):
 
     def test_informational_alert_uses_two_short_at_perceptible_intensity(self) -> None:
         outcome = self.dispatcher.dispatch(
-            _alert(event="kitchen_timer", category="informational", pattern="two_short")
+            _alert(event="appliance_beep", category="informational", pattern="two_short")
         )
 
         self.assertTrue(outcome.delivered)
@@ -119,7 +119,7 @@ class AlertDispatcherTest(unittest.TestCase):
     def test_custom_pattern_replaces_stale_default_for_same_emergency(self) -> None:
         first = self.dispatcher.dispatch(
             _alert(
-                event="fire_alarm",
+                event="alarm",
                 category="emergency",
                 pattern="urgent_repeat",
                 requires_ack=True,
@@ -129,7 +129,7 @@ class AlertDispatcherTest(unittest.TestCase):
 
         replacement = self.dispatcher.dispatch(
             _alert(
-                event="fire_alarm",
+                event="alarm",
                 category="emergency",
                 pattern="custom",
                 custom_pattern="200,100;500,200",
@@ -148,7 +148,7 @@ class AlertDispatcherTest(unittest.TestCase):
     def test_custom_emergency_replaces_different_pending_emergency(self) -> None:
         first = self.dispatcher.dispatch(
             _alert(
-                event="fire_alarm",
+                event="alarm",
                 category="emergency",
                 pattern="urgent_repeat",
                 requires_ack=True,
@@ -177,7 +177,7 @@ class AlertDispatcherTest(unittest.TestCase):
     def test_custom_attention_does_not_interrupt_pending_emergency(self) -> None:
         self.dispatcher.dispatch(
             _alert(
-                event="fire_alarm",
+                event="alarm",
                 category="emergency",
                 pattern="urgent_repeat",
                 requires_ack=True,
@@ -219,7 +219,7 @@ class AlertDispatcherTest(unittest.TestCase):
         self.assertTrue(second.delivered)
 
     def test_emergency_repeat_is_not_suppressed_by_the_default_cooldown(self) -> None:
-        alarm = _alert(event="fire_alarm", category="emergency", pattern="urgent_repeat")
+        alarm = _alert(event="alarm", category="emergency", pattern="urgent_repeat")
         first = self.dispatcher.dispatch(alarm)
         self.clock.advance(3.0)
         second = self.dispatcher.dispatch(alarm)
@@ -228,7 +228,7 @@ class AlertDispatcherTest(unittest.TestCase):
         self.assertTrue(second.delivered)
 
     def test_duplicate_event_id_is_never_replayed(self) -> None:
-        alarm = _alert(event="fire_alarm", category="emergency", event_id="evt_01")
+        alarm = _alert(event="alarm", category="emergency", event_id="evt_01")
         first = self.dispatcher.dispatch(alarm)
         self.clock.advance(60.0)
         replay = self.dispatcher.dispatch(alarm)
@@ -241,7 +241,7 @@ class AlertDispatcherTest(unittest.TestCase):
         outcomes = self.dispatcher.handle_detection_result(
             {
                 "alerts": [
-                    _alert(event="fire_alarm", category="emergency", pattern="urgent_repeat"),
+                    _alert(event="alarm", category="emergency", pattern="urgent_repeat"),
                     _alert(event="doorbell_knock"),
                 ]
             }
@@ -258,7 +258,7 @@ class AlertDispatcherTest(unittest.TestCase):
             {
                 "alerts": [
                     _alert(
-                        event="fire_alarm",
+                        event="alarm",
                         category="emergency",
                         pattern="urgent_repeat",
                         requires_ack=True,
@@ -277,7 +277,7 @@ class AlertDispatcherTest(unittest.TestCase):
 
     def test_acknowledge_button_stops_a_pending_pattern(self) -> None:
         self.dispatcher.dispatch(
-            _alert(event="fire_alarm", category="emergency", pattern="urgent_repeat", requires_ack=True)
+            _alert(event="alarm", category="emergency", pattern="urgent_repeat", requires_ack=True)
         )
         self.assertFalse(self.dispatcher.poll_acknowledge())
 

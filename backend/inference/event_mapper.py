@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
+from backend.inference.sound_catalog import CATALOG
+
 
 class Prediction(Protocol):
     label: str
@@ -27,13 +29,7 @@ class MappingResult:
 # Specific labels: matched as substrings of the lowercased model label, so
 # "siren" also covers "Police car (siren)" and "Civil defense siren".
 _EVENT_TERMS: dict[str, tuple[str, ...]] = {
-    "fire_alarm": ("fire alarm", "smoke detector", "smoke alarm"),
-    "doorbell_knock": ("doorbell", "ding-dong", "knock"),
-    "car_horn": ("vehicle horn", "car horn", "honking", "air horn", "truck horn", "toot"),
-    "siren": ("siren", "emergency vehicle"),
-    "baby_crying": ("baby cry", "infant cry", "crying, sobbing"),
-    "kitchen_timer": ("timer", "alarm clock"),
-    "phone_ringing": ("telephone bell ringing", "ringtone"),
+    entry.event: entry.labels for entry in CATALOG if entry.labels
 }
 
 # Generic AudioSet parents the model often emits instead of the specific child
@@ -41,11 +37,12 @@ _EVENT_TERMS: dict[str, tuple[str, ...]] = {
 # alarm"). Matched on the exact label only, so "alarm" does not also claim
 # "Car alarm", and gated by a higher floor because they are less specific.
 _GENERIC_EVENT_TERMS: dict[str, tuple[str, ...]] = {
-    "fire_alarm": ("alarm",),
-    "doorbell_knock": ("door", "buzzer"),
-    "kitchen_timer": ("beep, bleep",),
-    "phone_ringing": ("telephone",),
-    "baby_crying": ("whimper",),
+    entry.event: entry.exact_labels for entry in CATALOG if entry.exact_labels
+}
+
+# Substring hits that must not count ("Engine knocking" is not a knock).
+_EXCLUDED_TERMS: dict[str, tuple[str, ...]] = {
+    entry.event: entry.excluded_labels for entry in CATALOG if entry.excluded_labels
 }
 
 _SPEECH_TERMS = (
@@ -92,7 +89,10 @@ def _matching_events(
     events: list[str] = []
     if confidence >= minimum_confidence:
         events.extend(
-            event for event, terms in _EVENT_TERMS.items() if any(term in label for term in terms)
+            event
+            for event, terms in _EVENT_TERMS.items()
+            if any(term in label for term in terms)
+            and not any(excluded in label for excluded in _EXCLUDED_TERMS.get(event, ()))
         )
     if confidence >= generic_minimum_confidence:
         events.extend(

@@ -231,6 +231,14 @@ Exact matching is the single highest-value fix after turning the path on.
 confidence; rely on the existing per-profile threshold and cooldown; and log rejected
 near-misses to make tuning empirical rather than guessed.
 
+**Withdrawn (September 2026): name priming on the live path.** Measured on
+quiet-room recordings, putting the name into `initial_prompt` or `hotwords`
+made every Whisper size write that name onto noise-only windows (30-90 % of
+them) while decoding with no prompt produced none. The hub therefore decodes
+unprimed and relies on Silero VAD window gating, Whisper's `no_speech_prob`, a
+repetition check, and enrollment-learned spellings; see
+`backend/inference/speech.py` and `docs/IOS_DEMO_PLAN.md`.
+
 **Deferred: `initial_prompt` conditioning.** Whisper accepts a text prompt to bias it
 toward known names, which would help a lot. It needs text→token encoding, i.e. the BPE
 merges table and an encoder (~1 MB of assets, ~200 lines). Greedy decoding needs only

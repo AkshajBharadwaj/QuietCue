@@ -360,7 +360,7 @@ if [[ "$showcase" == true ]]; then
     [[ "$classifier" == "demo" ]] || { printf '--showcase requires --classifier demo.\n' >&2; exit 2; }
     showcase_directory="$(mktemp -d "${TMPDIR:-/tmp}/quietcue-showcase.XXXXXX")"
     fire_wav="$showcase_directory/fire-alarm.wav"
-    "$venv_python" scripts/generate_demo_audio.py fire_alarm "$fire_wav" --duration 1
+    "$venv_python" scripts/generate_demo_audio.py alarm "$fire_wav" --duration 1
 
     printf 'Showcase: emitting a configured emergency fire-alarm event...\n'
     "$venv_python" -m uno_q.linux.transport.hub_client "$fire_wav" \

@@ -46,6 +46,21 @@ class _FixedTranscriber:
         return Transcript(self.text, self.confidence)
 
 
+class _VadTranscriber(_FixedTranscriber):
+    """Fixed transcript plus a Silero-style speech-presence answer."""
+
+    def __init__(self, text: str, speech_ms: int | None) -> None:
+        super().__init__(text)
+        self.speech_ms = speech_ms
+
+    def detect_speech_ms(self, pcm: bytes, sample_rate: int) -> int | None:
+        return self.speech_ms
+
+    def transcribe_pcm16(self, pcm, sample_rate, prompt="", hotwords=None):
+        transcript = super().transcribe_pcm16(pcm, sample_rate, prompt, hotwords)
+        return Transcript(transcript.text, transcript.confidence, no_speech_probability=0.12)
+
+
 def _tone(duration_ms: int, amplitude: int = 8_000, frequency_hz: float = 220.0) -> bytes:
     """Loud enough to count as speech-like activity in the hub's own energy gate."""
     count = 16_000 * duration_ms // 1_000
@@ -115,6 +130,32 @@ class PhraseMatchingTest(unittest.TestCase):
         self.assertIsNotNone(find_phrase_match(Transcript("Rohan.", 0.64), ["Rohan"]))
         # A name inside a longer sentence only needs the low floor.
         self.assertIsNotNone(find_phrase_match(Transcript("Rohan can you come over here", 0.38), ["Rohan"]))
+
+    def test_high_no_speech_probability_rejects_a_name_on_noise(self) -> None:
+        # Measured shape of a quiet-room hallucination: confident text, but
+        # Whisper itself thinks the window was probably not speech.
+        noise = Transcript("Rohan Rohan.", confidence=0.85, no_speech_probability=0.81)
+        evaluation = evaluate_phrase_match(noise, ["Rohan"])
+        self.assertIsNone(evaluation.match)
+        self.assertEqual(evaluation.reject_reason, "no_speech_probability")
+
+        spoken = Transcript("Rohan, dinner is ready.", confidence=0.6, no_speech_probability=0.3)
+        self.assertIsNotNone(evaluate_phrase_match(spoken, ["Rohan"]).match)
+
+        unknown = Transcript("Rohan, dinner is ready.", confidence=0.6)
+        self.assertIsNotNone(evaluate_phrase_match(unknown, ["Rohan"]).match, "transcribers without the signal still match")
+
+    def test_repetitive_transcript_is_rejected_as_a_hallucination_loop(self) -> None:
+        loop = Transcript("Hi Rohan. " * 29, confidence=0.92, no_speech_probability=0.2)
+        evaluation = evaluate_phrase_match(loop, ["Rohan"])
+        self.assertIsNone(evaluation.match)
+        self.assertEqual(evaluation.reject_reason, "hallucination_loop")
+
+        triple = Transcript("Rohan Rohan Rohan.", confidence=0.9, no_speech_probability=0.2)
+        self.assertEqual(evaluate_phrase_match(triple, ["Rohan"]).reject_reason, "hallucination_loop")
+
+        double = Transcript("Rohan! Rohan, come here.", confidence=0.9, no_speech_probability=0.1)
+        self.assertIsNotNone(evaluate_phrase_match(double, ["Rohan"]).match, "calling twice is normal speech")
 
     def test_evaluation_reports_rejection_reason_without_transcript(self) -> None:
         evaluation = evaluate_phrase_match(Transcript("Ryan come here"), ["Rohan"])
@@ -247,6 +288,30 @@ class BufferedRecognizerTest(unittest.TestCase):
         window_ms = len(transcriber.received[0]) // 2 // 16
         self.assertLessEqual(window_ms, 1_800, "the second of pure silence must not be handed to Whisper")
         self.assertGreaterEqual(window_ms, 1_000)
+
+    def test_windows_without_vad_speech_skip_the_decoder(self) -> None:
+        transcriber = _VadTranscriber("Rohan", speech_ms=0)
+        recognizer = BufferedSpeechRecognizer(transcriber, executor=_InlineExecutor())
+
+        recognizer.update(_tone(1_000), 16_000, True, ["Rohan"])
+        result, _ = recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
+
+        self.assertEqual(transcriber.calls, 0, "no decode when Silero hears no speech")
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.phrase_match)
+        self.assertEqual(result.diagnostics.reject_reason, "vad_no_speech")
+        self.assertEqual(result.diagnostics.speech_ms, 0)
+        self.assertFalse(result.diagnostics.transcribed)
+
+        transcriber = _VadTranscriber("Rohan", speech_ms=640)
+        recognizer = BufferedSpeechRecognizer(transcriber, executor=_InlineExecutor())
+        recognizer.update(_tone(1_000), 16_000, True, ["Rohan"])
+        result, _ = recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
+        self.assertEqual(transcriber.calls, 1)
+        self.assertIsNotNone(result.phrase_match)
+        self.assertEqual(result.diagnostics.speech_ms, 640)
+        self.assertEqual(result.diagnostics.no_speech_probability, 0.12)
+        self.assertNotIn("Rohan", str(result.diagnostics.to_wire()))
 
     def test_silence_never_reaches_the_transcriber(self) -> None:
         transcriber = _FixedTranscriber("nothing")

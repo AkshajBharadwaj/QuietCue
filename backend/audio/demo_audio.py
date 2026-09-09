@@ -14,10 +14,10 @@ from backend.inference.demo_classifier import DEMO_TONES
 EVENT_FREQUENCIES = {
     "doorbell_knock": 600,
     "car_horn": 800,
-    "fire_alarm": 1000,
+    "alarm": 1000,
     "siren": 1250,
     "baby_crying": 1600,
-    "kitchen_timer": 2000,
+    "appliance_beep": 2000,
     "phone_ringing": 2500,
     "vacuum_cleaner": 3150,
 }

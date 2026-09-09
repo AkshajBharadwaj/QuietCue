@@ -126,7 +126,19 @@ final class ProfileStore {
     }
 
     private func currentProfiles(library: [SoundDefinition]) -> [AlertProfile] {
-        let decoded = persisted.profiles
+        // Profiles saved before the September 2026 catalog rebuild still carry
+        // fire_alarm / kitchen_timer rules; carry their settings over. Rules
+        // for ids no longer in the library fall away in `completeRules`.
+        let decoded = persisted.profiles.map { profile -> AlertProfile in
+            var migrated = profile
+            var seen = Set<String>()
+            migrated.soundRules = profile.soundRules.compactMap { rule in
+                var renamed = rule
+                renamed.soundId = SoundType.canonicalId(rule.soundId)
+                return seen.insert(renamed.soundId).inserted ? renamed : nil
+            }
+            return migrated
+        }
         if decoded.isEmpty {
             return ProfileDefaults.all().map { profile in
                 var completed = profile

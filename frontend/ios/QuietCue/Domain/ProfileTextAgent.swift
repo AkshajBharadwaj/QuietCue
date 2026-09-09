@@ -129,16 +129,8 @@ struct LocalProfileTextAgent {
         var result: Set<String> = [sound.displayName.lowercased()]
         let bare = sound.id.hasPrefix("custom:") ? String(sound.id.dropFirst("custom:".count)) : sound.id
         result.insert(bare.replacingOccurrences(of: "_", with: " ").lowercased())
-        switch sound.builtInType {
-        case .fireAlarm: result.formUnion(["fire alarm", "smoke alarm"])
-        case .doorbellKnock: result.formUnion(["doorbell", "knock", "door"])
-        case .carHorn: result.formUnion(["car horn", "horn", "honking"])
-        case .siren: result.formUnion(["siren", "emergency vehicle"])
-        case .nameCalled: result.formUnion(["my name", "name called", "someone calls"])
-        case .babyCrying: result.formUnion(["baby", "crying"])
-        case .kitchenTimer: result.formUnion(["timer", "kitchen timer"])
-        case .phoneRinging: result.formUnion(["phone", "ringtone", "phone ringing"])
-        case nil: break
+        if let builtIn = sound.builtInType {
+            result.formUnion(builtIn.aliases)
         }
         return result
     }

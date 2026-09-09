@@ -19,8 +19,11 @@ struct EnrollmentError: LocalizedError {
 enum AcousticFingerprint {
     static let sampleRate = 16_000
     static let featureCount = 8
-    static let minPositiveSamples = 3
-    static let recommendedPositiveSamples = 6
+    /// One recording is enough to enroll; more examples widen coverage and,
+    /// from three on, let the matcher demand support from a second example.
+    static let minPositiveSamples = 1
+    static let recommendedPositiveSamples = 3
+    static let multiSupportSamples = 3
     static let maxPositiveSamples = 30
     static let frequencies = [250, 375, 500, 750, 1_000, 1_500, 2_000, 3_000]
     private static let minRepeatSimilarity: Float = 0.86
@@ -53,7 +56,7 @@ enum AcousticFingerprint {
         let references = enrollment.prototypes.isEmpty ? [enrollment.prototype] : enrollment.prototypes
         let similarities = references.map { similarity(candidate, $0) }.sorted(by: >)
         guard let best = similarities.first, best >= enrollment.similarityThreshold else { return nil }
-        if enrollment.matcherVersion >= 4 && similarities.count >= minPositiveSamples {
+        if enrollment.matcherVersion >= 4 && similarities.count >= multiSupportSamples {
             let tolerance: Float = 0.04
             if similarities[1] < enrollment.similarityThreshold - tolerance ||
                 similarity(candidate, enrollment.prototype) < enrollment.similarityThreshold - tolerance {
@@ -84,8 +87,8 @@ enum AcousticFingerprint {
         let norm = max(averaged.reduce(0.0) { $0 + $1 * $1 }.squareRoot(), 1e-12)
         let prototype = averaged.map { Float($0 / norm) }
         let consistent = positives.filter { similarity($0.features, prototype) >= minRepeatSimilarity }.count
-        guard consistent >= minPositiveSamples else {
-            throw EnrollmentError(message: "The examples are too different; teach the same sound at least three times")
+        guard consistent >= min(positives.count, multiSupportSamples) else {
+            throw EnrollmentError(message: "The examples are too different; remove the odd one out or record the same sound again")
         }
         let negatives = [background] + confusingSounds
         let backgroundSimilarity = negatives.map { negative in

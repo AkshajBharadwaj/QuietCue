@@ -20,7 +20,7 @@ DEMO_TONES: dict[int, str] = {
     1000: "Fire alarm",
     1250: "Siren",
     1600: "Baby cry, infant cry",
-    2000: "Alarm clock",
+    2000: "Beep, bleep",
     2500: "Telephone bell ringing",
     3150: "Vacuum cleaner",
 }

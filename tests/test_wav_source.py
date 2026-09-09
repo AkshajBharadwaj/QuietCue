@@ -11,7 +11,7 @@ from backend.audio.wav_source import iter_wav_chunks
 class WavSourceTest(unittest.TestCase):
     def test_replay_uses_fixed_contract_and_sequences(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = write_demo_wav(Path(directory) / "alarm.wav", "fire_alarm", 1.0)
+            path = write_demo_wav(Path(directory) / "alarm.wav", "alarm", 1.0)
             chunks = list(iter_wav_chunks(path, chunk_ms=500))
 
         self.assertEqual([chunk.sequence for chunk in chunks], [0, 1])

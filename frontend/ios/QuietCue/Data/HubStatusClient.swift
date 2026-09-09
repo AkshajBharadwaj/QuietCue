@@ -49,9 +49,12 @@ struct HubStatusClient {
         _ = try await request(method: "POST", path: "/api/inference/device", json: ["device": device.rawValue])
     }
 
-    func captureEnrollmentSession(durationMs: Int = 10_000) async throws -> EnrollmentCapture {
+    /// `minRepeats` 1 records a single example (the loudest event in the
+    /// session wins); 3 is the guided multi-repeat session the Android app uses.
+    func captureEnrollmentSession(durationMs: Int = 5_000, minRepeats: Int = 1) async throws -> EnrollmentCapture {
         guard (4_000...15_000).contains(durationMs) else { throw HubStatusError(message: "Invalid enrollment duration") }
-        _ = try await request(method: "POST", path: "/api/enrollment/start", json: ["duration_ms": durationMs])
+        guard (1...3).contains(minRepeats) else { throw HubStatusError(message: "Invalid enrollment repeat count") }
+        _ = try await request(method: "POST", path: "/api/enrollment/start", json: ["duration_ms": durationMs, "min_repeats": minRepeats])
         let deadline = Date().addingTimeInterval(Double(durationMs) / 1_000 + 15)
         while Date() < deadline {
             let status = try await request(method: "GET", path: "/api/enrollment/status")

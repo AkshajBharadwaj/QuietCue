@@ -77,6 +77,20 @@ enum ProfileDefaults {
         return ruleForSound(definition, enabled: definition.builtInType != nil)
     }
 
+    /// Sounds that make sense in each situation; the rest of the catalog is
+    /// present in the profile but switched off so the user can enable it.
+    private static let homeEnabled: Set<SoundType> = [
+        .alarm, .siren, .loudBang, .glassBreaking, .doorbellKnock, .bell, .phoneRinging,
+        .babyCrying, .nameCalled, .dogBark, .cat, .applianceBeep, .thunder,
+    ]
+    private static let workEnabled: Set<SoundType> = [
+        .alarm, .siren, .loudBang, .glassBreaking, .doorbellKnock, .phoneRinging, .nameCalled, .clapping,
+    ]
+    private static let drivingEnabled: Set<SoundType> = [.alarm, .siren, .loudBang, .carHorn, .train, .nameCalled]
+    private static let sleepEnabled: Set<SoundType> = [
+        .alarm, .siren, .loudBang, .glassBreaking, .babyCrying, .dogBark, .nameCalled,
+    ]
+
     private struct RuleOverrides {
         var threshold: Float? = nil
         var priority: AlertPriority? = nil
@@ -95,11 +109,10 @@ enum ProfileDefaults {
             icon: .home,
             color: .teal,
             soundRules: rules(
-                disabled: [.carHorn],
+                disabled: Set(SoundType.allCases).subtracting(homeEnabled),
                 overrides: [
                     .doorbellKnock: RuleOverrides(threshold: 0.55),
                     .babyCrying: RuleOverrides(threshold: 0.50),
-                    .kitchenTimer: RuleOverrides(threshold: 0.60, priority: .informational, pattern: .twoShort),
                 ]
             )
         )
@@ -117,7 +130,7 @@ enum ProfileDefaults {
             speechMode: .alwaysOn,
             phraseTriggers: ["front desk"],
             soundRules: rules(
-                disabled: [.babyCrying, .kitchenTimer],
+                disabled: Set(SoundType.allCases).subtracting(workEnabled),
                 overrides: [
                     .nameCalled: RuleOverrides(threshold: 0.48),
                     .phoneRinging: RuleOverrides(threshold: 0.65, priority: .informational, pattern: .shortPulse),
@@ -136,7 +149,7 @@ enum ProfileDefaults {
             color: .amber,
             activation: ActivationRule(activity: .drivingTransit),
             soundRules: rules(
-                disabled: [.doorbellKnock, .babyCrying, .kitchenTimer, .phoneRinging],
+                disabled: Set(SoundType.allCases).subtracting(drivingEnabled),
                 overrides: [
                     .carHorn: RuleOverrides(
                         threshold: 0.42,
@@ -164,7 +177,7 @@ enum ProfileDefaults {
             activation: ActivationRule(activity: .sleeping),
             speechMode: .off,
             soundRules: rules(
-                disabled: [.doorbellKnock, .carHorn, .kitchenTimer, .phoneRinging],
+                disabled: Set(SoundType.allCases).subtracting(sleepEnabled),
                 overrides: [
                     .babyCrying: RuleOverrides(
                         threshold: 0.42,
@@ -217,13 +230,20 @@ enum ProfileDefaults {
     }
 
     private static func baseRule(_ sound: SoundType) -> SoundRule {
-        let emergency = sound == .fireAlarm || sound == .siren
+        let category = sound.category
+        let emergency = category == .emergency
+        let pattern: HapticPattern
+        switch category {
+        case .emergency: pattern = .urgentRepeat
+        case .attention: pattern = .longPulse
+        case .informational: pattern = .twoShort
+        }
         return SoundRule(
             soundId: sound.id,
             enabled: true,
             confidenceThreshold: emergency ? 0.45 : 0.60,
-            priority: emergency ? .emergency : .attention,
-            hapticPattern: emergency ? .urgentRepeat : .longPulse,
+            priority: category,
+            hapticPattern: pattern,
             hapticStrength: emergency ? .strong : .standard,
             requiresAcknowledgement: emergency,
             cooldownSeconds: defaultCooldownSeconds(soundId: sound.id, emergency: emergency)

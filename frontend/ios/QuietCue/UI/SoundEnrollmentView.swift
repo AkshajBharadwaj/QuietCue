@@ -1,8 +1,15 @@
 import SwiftUI
 
-/// Port of the Android `SoundEnrollmentScreen`. The hub captures fingerprints
-/// from the live microphone stream, which on this demo is the iPhone itself.
+/// Sound enrollment for the iPhone demo. The hub captures fingerprints from
+/// the live microphone stream, which on this demo is the iPhone itself.
+///
+/// Unlike the Android guided session (play the sound 4-6 times in ten
+/// seconds), each capture here records the sound once. One example is enough
+/// to save; more can be added, and from three on the matcher requires a second
+/// example to agree before it alerts.
 struct SoundEnrollmentView: View {
+    private static let captureDurationMs = 5_000
+
     @Environment(AppModel.self) private var model
     @Environment(\.scheme) private var scheme
     var initialName: String
@@ -30,12 +37,12 @@ struct SoundEnrollmentView: View {
         _descriptionText = State(initialValue: initialDescription)
     }
 
-    private func capture(_ label: String, durationMs: Int, onCaptured: @escaping (EnrollmentCapture) -> Void) {
+    private func capture(_ label: String, onCaptured: @escaping (EnrollmentCapture) -> Void) {
         Task {
             recordingLabel = label
             error = nil
             do {
-                onCaptured(try await model.captureEnrollmentSession(durationMs: durationMs))
+                onCaptured(try await model.captureEnrollmentSession(durationMs: Self.captureDurationMs, minRepeats: 1))
             } catch {
                 self.error = error.localizedDescription
             }
@@ -46,7 +53,7 @@ struct SoundEnrollmentView: View {
     var body: some View {
         EditorScaffold(title: "Enroll a sound", onBack: onBack) {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Tap once, then play the same sound 4–6 times with a short pause between repeats. QuietCue listens through the iPhone microphone, groups matching repeats, ignores speech and incidental sounds, and immediately discards raw audio.")
+                Text("Tap Record, then play the sound once. One example is enough to save; adding two or three more from different distances makes matching more reliable. QuietCue listens through the iPhone microphone, ignores speech and incidental sounds, and immediately discards raw audio.")
                     .font(MaterialType.bodyLarge).foregroundStyle(scheme.onSurfaceVariant)
                 MaterialCard {
                     VStack(alignment: .leading, spacing: 12) {
@@ -63,7 +70,7 @@ struct SoundEnrollmentView: View {
                             Image(systemName: "waveform").font(.system(size: 22))
                             Text("Sound examples").font(MaterialType.titleLarge)
                         }
-                        Text("Keep normal room noise present, but do not talk during teaching. Vary the sound's distance or angle between repeats.")
+                        Text("Keep normal room noise present, but do not talk while recording. If you add more examples, vary the sound's distance or angle.")
                             .font(MaterialType.bodyLarge)
                         ForEach(Array(positives.enumerated()), id: \.offset) { index, sample in
                             HStack {
@@ -76,26 +83,36 @@ struct SoundEnrollmentView: View {
                             }
                         }
                         if positives.count >= AcousticFingerprint.minPositiveSamples && positives.count < AcousticFingerprint.recommendedPositiveSamples {
-                            Text("Usable, but add \(AcousticFingerprint.recommendedPositiveSamples - positives.count) more varied example(s) for better coverage.")
+                            Text("Ready to save. Optional: \(AcousticFingerprint.recommendedPositiveSamples - positives.count) more example(s) from a different spot cut misses and false alarms.")
                                 .font(MaterialType.bodyLarge)
                         }
                         if let captureSummary { Text(captureSummary).font(MaterialType.bodyLarge).foregroundStyle(scheme.primary) }
                         FilledButton(
-                            label: recordingLabel.map { "\($0)…" } ?? (positives.isEmpty ? "Start 10-second guided capture" : "Add another guided capture"),
+                            label: recordingLabel.map { "\($0)…" } ?? (positives.isEmpty ? "Record the sound (5 seconds)" : "Add another example (optional)"),
                             icon: "mic.fill",
                             enabled: recordingLabel == nil && positives.count < AcousticFingerprint.maxPositiveSamples
                         ) {
-                            capture("Listening for repeated sounds", durationMs: 10_000) { session in
+                            capture("Play the sound now") { session in
                                 let room = AcousticFingerprint.maxPositiveSamples - positives.count
-                                positives.append(contentsOf: session.positives.prefix(room))
-                                background = session.background
-                                var summary = "Found \(session.positives.count) sound repeat(s) and calibrated the room"
+                                let captured = Array(session.positives.prefix(room))
+                                positives.append(contentsOf: captured)
+                                if background == nil {
+                                    background = session.background
+                                }
+                                testResult = nil
+                                var summary = captured.count > 1
+                                    ? "Captured \(captured.count) matching repeats as examples \(positives.count - captured.count + 1)–\(positives.count)"
+                                    : "Captured example \(positives.count)"
+                                if positives.count == captured.count {
+                                    summary += " and calibrated the room"
+                                }
                                 if session.speechRejectedMs > 0 {
                                     summary += "; ignored \(Double(session.speechRejectedMs) / 1_000) seconds of speech"
                                 }
                                 captureSummary = summary + "."
-                                if session.positives.isEmpty {
-                                    error = "No clear sound was found. Move it closer to the iPhone and leave a short pause between repeats."
+                                if captured.isEmpty {
+                                    captureSummary = nil
+                                    error = "No clear sound was found. Move it closer to the iPhone and play it once right after tapping Record."
                                 }
                             }
                         }
@@ -105,8 +122,8 @@ struct SoundEnrollmentView: View {
                 MaterialCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Automatic background calibration").font(MaterialType.titleLarge)
-                        Text("QuietCue uses the quietest part of each guided session as the room baseline.").font(MaterialType.bodyLarge)
-                        Text(background.map { "✓ Room baseline: \(Int($0.rmsDbfs.rounded())) dBFS" } ?? "The baseline will be captured with your first teaching session.")
+                        Text("QuietCue uses the quietest part of your first recording as the room baseline.").font(MaterialType.bodyLarge)
+                        Text(background.map { "✓ Room baseline: \(Int($0.rmsDbfs.rounded())) dBFS" } ?? "The baseline will be captured with your first recording.")
                             .font(MaterialType.bodyLarge)
                     }
                     .padding(16)
@@ -123,7 +140,7 @@ struct SoundEnrollmentView: View {
                             }
                         }
                         OutlinedButtonM(label: "Add confusing sound", enabled: recordingLabel == nil && confusingSounds.count < 10) {
-                            capture("Listening for non-matches", durationMs: 4_000) { session in
+                            capture("Play the confusing sound now") { session in
                                 confusingSounds.append(contentsOf: session.positives.prefix(10 - confusingSounds.count))
                                 if session.positives.isEmpty {
                                     error = "No clear non-match was found. Play it closer to the iPhone."
@@ -136,9 +153,9 @@ struct SoundEnrollmentView: View {
                 MaterialCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Test before saving").font(MaterialType.titleLarge)
-                        Text("Play the enrolled sound again to check whether the current examples recognize it.").font(MaterialType.bodyLarge)
+                        Text("Play the sound once more to check whether the current example(s) recognize it.").font(MaterialType.bodyLarge)
                         OutlinedButtonM(label: "Record test", enabled: recordingLabel == nil && positives.count >= AcousticFingerprint.minPositiveSamples) {
-                            capture("Listening for the test sound", durationMs: 4_000) { session in
+                            capture("Play the sound now") { session in
                                 let draftEnrollment = background.flatMap { bg in
                                     try? AcousticFingerprint.enroll(
                                         name: name.isEmpty ? "Test sound" : name,
@@ -156,9 +173,11 @@ struct SoundEnrollmentView: View {
                                     session.positives.compactMap { AcousticFingerprint.matchConfidence($0.features, enrollment: enrollment) }.max()
                                 }
                                 if let matched {
-                                    testResult = "Match \(Int((matched * 100).rounded()))% across multiple examples"
+                                    testResult = positives.count >= AcousticFingerprint.multiSupportSamples
+                                        ? "Match \(Int((matched * 100).rounded()))%, supported by more than one example"
+                                        : "Match \(Int((matched * 100).rounded()))%"
                                 } else {
-                                    testResult = "No reliable match \(Int((rawBest * 100).rounded()))% — add another clean repeat"
+                                    testResult = "No reliable match (\(Int((rawBest * 100).rounded()))%). Add another example recorded the way you just played it."
                                 }
                             }
                         }

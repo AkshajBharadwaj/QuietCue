@@ -68,9 +68,9 @@ class RecordingHapticTransport:
 class DemoPipelineTest(unittest.TestCase):
     def test_tone_maps_to_confirmed_event_and_profile_alert(self) -> None:
         pipeline = HubInferencePipeline(DemoToneSoundClassifier())
-        inference = pipeline.process_pcm16(generate_tone_pcm("fire_alarm", 0.5), 16_000)
+        inference = pipeline.process_pcm16(generate_tone_pcm("alarm", 0.5), 16_000)
 
-        self.assertEqual(inference.events[0].event, "fire_alarm")
+        self.assertEqual(inference.events[0].event, "alarm")
         decisions = ProfileDecisionEngine(get_profile("home")).decide(
             inference.events,
             captured_at_ms=1_000,
@@ -97,7 +97,7 @@ class DemoPipelineTest(unittest.TestCase):
         engine = ProfileDecisionEngine(get_profile("sleep"))
         events = (
             ConfirmedEvent("name_called", 0.90, "phrase", "attention", "long_pulse", False),
-            ConfirmedEvent("fire_alarm", 0.90, "Fire alarm", "emergency", "urgent_repeat", True),
+            ConfirmedEvent("alarm", 0.90, "Fire alarm", "emergency", "urgent_repeat", True),
         )
 
         decisions = engine.decide(
@@ -108,7 +108,7 @@ class DemoPipelineTest(unittest.TestCase):
             local_datetime=datetime(2026, 8, 4, 23, 0),
         )
 
-        self.assertEqual([alert.event for alert in decisions.alerts], ["fire_alarm"])
+        self.assertEqual([alert.event for alert in decisions.alerts], ["alarm"])
         self.assertEqual(decisions.suppressed[0].reason, "quiet_hours")
 
     def test_unconfigured_recognized_sound_uses_phone_fallback_cue(self) -> None:
@@ -140,7 +140,7 @@ class DemoPipelineTest(unittest.TestCase):
         engine = ProfileDecisionEngine(profile)
         store = AlertStateStore(profile)
 
-        fire = pipeline.process_pcm16(generate_tone_pcm("fire_alarm", 0.5), 16_000)
+        fire = pipeline.process_pcm16(generate_tone_pcm("alarm", 0.5), 16_000)
         store.record(
             0,
             fire,
@@ -161,7 +161,7 @@ class DemoPipelineTest(unittest.TestCase):
         )
 
         snapshot = store.snapshot()
-        self.assertEqual("fire_alarm", snapshot["latest_alert"]["event"])
+        self.assertEqual("alarm", snapshot["latest_alert"]["event"])
         self.assertTrue(snapshot["latest_alert"]["haptic_active"])
         self.assertEqual("doorbell_knock", snapshot["recent_alerts"][0]["event"])
 
@@ -212,7 +212,7 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
                         "channels": 1,
                         "encoding": "pcm_s16le",
                     },
-                    generate_tone_pcm("fire_alarm", 0.5),
+                    generate_tone_pcm("alarm", 0.5),
                 ),
             )
             response = await read_message(reader)
@@ -222,6 +222,119 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.body["alerts"][0]["event"], "custom:vacuum")
             self.assertEqual(response.body["alerts"][0]["pattern"], "two_short")
         finally:
+            server.close()
+            await server.wait_closed()
+
+    async def test_hub_does_not_prime_whisper_with_names_unless_asked(self) -> None:
+        import json
+        import math
+        import struct
+        from pathlib import Path
+
+        from backend.inference.speech import Transcript
+
+        class RecordingTranscriber:
+            def __init__(self) -> None:
+                self.prompts: list[tuple[str, list[str]]] = []
+
+            def transcribe_pcm16(self, pcm, sample_rate, prompt="", hotwords=None):
+                self.prompts.append((prompt, list(hotwords or [])))
+                return Transcript("nothing", 0.9)
+
+        fixture = json.loads(Path("tests/fixtures/ios_profile_sync.json").read_text())
+        profile = decode_profile(fixture)
+        transcriber = RecordingTranscriber()
+        hub = QuietCueHubServer(
+            lambda: HubInferencePipeline(DemoToneSoundClassifier(), transcriber),
+            ProfileDecisionEngine(profile),
+            AlertStateStore(profile),
+        )
+        tone = b"".join(
+            struct.pack("<h", int(8_000 * math.sin(2 * math.pi * 220 * index / 16_000)))
+            for index in range(16_000)
+        )
+        silence = b"\x00\x00" * 16_000
+
+        async def stream_utterance(sequence: int) -> None:
+            for offset, payload in enumerate((tone, silence)):
+                await write_message(
+                    writer,
+                    WireMessage(
+                        "audio_chunk",
+                        {
+                            "sequence": sequence + offset,
+                            "captured_at_ms": int(time.time() * 1_000),
+                            "sample_rate": 16_000,
+                            "channels": 1,
+                            "encoding": "pcm_s16le",
+                        },
+                        payload,
+                    ),
+                )
+                await read_message(reader)
+
+        server = await asyncio.start_server(hub.handle_client, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            await write_message(writer, WireMessage("edge_hello", {"device_id": "prime-test"}))
+            await read_message(reader)
+
+            await stream_utterance(0)
+            for _ in range(20):
+                if transcriber.prompts:
+                    break
+                await asyncio.sleep(0.05)
+            self.assertEqual(transcriber.prompts, [("", [])], "names never reach Whisper's prompt by default")
+
+            hub.prime_speech_names = True
+            await stream_utterance(10)
+            for _ in range(20):
+                if len(transcriber.prompts) > 1:
+                    break
+                await asyncio.sleep(0.05)
+            prompt, hotwords = transcriber.prompts[-1]
+            self.assertIn("Akshaj", prompt)
+            self.assertIn("Akshaj", hotwords)
+            writer.close()
+            await writer.wait_closed()
+        finally:
+            server.close()
+            await server.wait_closed()
+            await hub.close()
+
+    async def test_enrollment_start_accepts_min_repeats(self) -> None:
+        import json
+
+        from backend.app.status_server import StatusHttpServer
+        from backend.inference.enrollment_capture import EnrollmentCaptureController
+
+        controller = EnrollmentCaptureController()
+        status = StatusHttpServer(
+            lambda: {},
+            start_enrollment=controller.start,
+            enrollment_status=controller.status,
+            cancel_enrollment=controller.cancel,
+        )
+        server = await asyncio.start_server(status.handle_client, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            body = json.dumps({"duration_ms": 5_000, "min_repeats": 1}).encode()
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            writer.write(
+                b"POST /api/enrollment/start HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                + f"Content-Length: {len(body)}\r\n\r\n".encode()
+                + body
+            )
+            await writer.drain()
+            response = await reader.read()
+            writer.close()
+            await writer.wait_closed()
+            self.assertIn(b"200 OK", response)
+            self.assertIn(b'"state":"recording"', response)
+            self.assertEqual(controller._min_repeats, 1)
+        finally:
+            controller.cancel()
             server.close()
             await server.wait_closed()
 
@@ -254,7 +367,7 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
                         "channels": 1,
                         "encoding": "pcm_s16le",
                     },
-                    generate_tone_pcm("fire_alarm", 0.5),
+                    generate_tone_pcm("alarm", 0.5),
                 ),
             )
             response = await read_message(reader)
@@ -268,7 +381,7 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
                         "outcomes": [
                             {
                                 "event_id": event_id,
-                                "event": "fire_alarm",
+                                "event": "alarm",
                                 "delivered": True,
                                 "reason": "delivered",
                                 "pattern": "urgent_repeat",
@@ -283,7 +396,7 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
             await writer.wait_closed()
 
             self.assertEqual(response.kind, "detection_result")
-            self.assertEqual(response.body["alerts"][0]["event"], "fire_alarm")
+            self.assertEqual(response.body["alerts"][0]["event"], "alarm")
             self.assertEqual(store.snapshot()["latest_alert"]["pattern"], "urgent_repeat")
             self.assertFalse(store.snapshot()["latest_alert"]["simulated"])
             self.assertTrue(
@@ -305,7 +418,7 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
         port = server.sockets[0].getsockname()[1]
         transport = RecordingHapticTransport()
         now_ms = int(time.time() * 1_000)
-        pcm = generate_tone_pcm("fire_alarm", 0.5)
+        pcm = generate_tone_pcm("alarm", 0.5)
         chunks = (
             AudioChunk(0, now_ms, pcm),
             AudioChunk(1, now_ms + 500, pcm),
@@ -359,7 +472,7 @@ class HubIntegrationTest(unittest.IsolatedAsyncioTestCase):
                             "channels": 1,
                             "encoding": "pcm_s16le",
                         },
-                        generate_tone_pcm("fire_alarm", 0.5),
+                        generate_tone_pcm("alarm", 0.5),
                     ),
                 )
                 return await read_message(reader)

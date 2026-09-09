@@ -22,15 +22,15 @@ Uno Q timing, Arduino RPC, or a vibration motor.
 From the repository root:
 
 ```bash
-python3 scripts/run_no_hardware_demo.py --event fire_alarm --profile home
+python3 scripts/run_no_hardware_demo.py --event alarm --profile home
 ```
 
 No third-party Python packages are required. The command starts a temporary demo
 hub, generates a WAV, streams it, prints the detection and alert command, and then
 stops the hub.
 
-Supported synthetic events are `doorbell_knock`, `car_horn`, `fire_alarm`,
-`siren`, `baby_crying`, `kitchen_timer`, and `phone_ringing`. Backend profiles are
+Supported synthetic events are `doorbell_knock`, `car_horn`, `alarm`,
+`siren`, `baby_crying`, `appliance_beep`, and `phone_ringing`. Backend profiles are
 `home`, `work`, `driving`, `sleep`, and `emergency`.
 
 For example, Home deliberately suppresses a car horn while Driving turns it into
@@ -67,7 +67,7 @@ python3 -m backend.app.hub_server --classifier demo --profile home
 Generate and replay an event in terminal 2:
 
 ```bash
-python3 scripts/generate_demo_audio.py fire_alarm /tmp/quietcue-fire-alarm.wav --duration 5
+python3 scripts/generate_demo_audio.py alarm /tmp/quietcue-fire-alarm.wav --duration 5
 python3 -m uno_q.linux.transport.hub_client \
   /tmp/quietcue-fire-alarm.wav \
   --pc 127.0.0.1:8765 \

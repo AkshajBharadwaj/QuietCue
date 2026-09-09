@@ -1,48 +1,136 @@
 import Foundation
 
-/// Built-in sound events. `id` values match the hub's event names exactly.
+/// Built-in sound events. `id` values match the hub's event names exactly
+/// (`backend/inference/sound_catalog.py`). The list was rebuilt in September
+/// 2026 around what YAMNet detects reliably on real recordings.
 enum SoundType: String, CaseIterable, Codable {
-    case fireAlarm = "fire_alarm"
-    case doorbellKnock = "doorbell_knock"
+    case alarm
+    case siren
+    case loudBang = "loud_bang"
+    case glassBreaking = "glass_breaking"
     case carHorn = "car_horn"
-    case siren = "siren"
-    case nameCalled = "name_called"
-    case babyCrying = "baby_crying"
-    case kitchenTimer = "kitchen_timer"
+    case doorbellKnock = "doorbell_knock"
+    case bell
     case phoneRinging = "phone_ringing"
+    case babyCrying = "baby_crying"
+    case nameCalled = "name_called"
+    case dogBark = "dog_bark"
+    case cat
+    case applianceBeep = "appliance_beep"
+    case thunder
+    case train
+    case clapping
+    case cough
+    case toiletFlush = "toilet_flush"
+    case typing
+    case snoring
+    case chainsaw
 
     var id: String { rawValue }
 
+    /// Ids from before the rebuild, still present in saved profiles.
+    static let legacyIds: [String: SoundType] = [
+        "fire_alarm": .alarm,
+        "kitchen_timer": .applianceBeep,
+    ]
+
+    static func canonicalId(_ soundId: String) -> String {
+        legacyIds[soundId]?.id ?? soundId
+    }
+
     var displayName: String {
         switch self {
-        case .fireAlarm: return "Fire or smoke alarm"
-        case .doorbellKnock: return "Doorbell or knock"
-        case .carHorn: return "Car horn"
+        case .alarm: return "Alarm"
         case .siren: return "Siren"
-        case .nameCalled: return "Name or phrase called"
-        case .babyCrying: return "Baby crying"
-        case .kitchenTimer: return "Kitchen timer"
+        case .loudBang: return "Loud bang"
+        case .glassBreaking: return "Glass breaking"
+        case .carHorn: return "Car horn"
+        case .doorbellKnock: return "Doorbell or knock"
+        case .bell: return "Bell or chime"
         case .phoneRinging: return "Phone ringing"
+        case .babyCrying: return "Baby crying"
+        case .nameCalled: return "Name or phrase called"
+        case .dogBark: return "Dog barking"
+        case .cat: return "Cat"
+        case .applianceBeep: return "Appliance beeps"
+        case .thunder: return "Thunder"
+        case .train: return "Train"
+        case .clapping: return "Clapping or applause"
+        case .cough: return "Coughing"
+        case .toiletFlush: return "Toilet flush"
+        case .typing: return "Typing"
+        case .snoring: return "Snoring"
+        case .chainsaw: return "Chainsaw"
         }
     }
 
     var descriptionText: String {
         switch self {
-        case .fireAlarm: return "Smoke detectors, fire alarms, and evacuation tones"
-        case .doorbellKnock: return "Door chimes and knocking at a nearby door"
+        case .alarm: return "Smoke and fire alarms, alarm clocks, buzzers and other alarm tones"
+        case .siren: return "Police, ambulance, fire-engine and civil-defense sirens"
+        case .loudBang: return "Explosions, gunshots, fireworks and firecrackers"
+        case .glassBreaking: return "Shattering or breaking glass"
         case .carHorn: return "Nearby vehicle horns and warning honks"
-        case .siren: return "Emergency vehicle and civil-warning sirens"
+        case .doorbellKnock: return "Door chimes, apartment buzzers and knocking at a nearby door"
+        case .bell: return "Church bells, hand bells and chimes, including bell-type doorbells"
+        case .phoneRinging: return "Classic phone rings and ringtones (musical ringtones are often missed)"
+        case .babyCrying: return "Infant crying and sobbing nearby"
         case .nameCalled: return "Speech containing one of your configured phrases"
-        case .babyCrying: return "Sustained infant crying nearby"
-        case .kitchenTimer: return "Timer beeps and common appliance alerts"
-        case .phoneRinging: return "Phone calls and repeated ringtone patterns"
+        case .dogBark: return "Barking, howling and growling dogs"
+        case .cat: return "Meowing, purring and caterwauling cats"
+        case .applianceBeep: return "Microwave, timer, washer and other appliance beeps"
+        case .thunder: return "Thunder and thunderstorms"
+        case .train: return "Trains, train horns and whistles, rail transport"
+        case .clapping: return "Hand clapping and applause, often used to get attention"
+        case .cough: return "Coughing and throat clearing nearby"
+        case .toiletFlush: return "A toilet flushing"
+        case .typing: return "Keyboard typing"
+        case .snoring: return "Snoring nearby"
+        case .chainsaw: return "Chainsaws and similar power tools"
+        }
+    }
+
+    /// Default urgency; mirrors the hub catalog's category.
+    var category: AlertPriority {
+        switch self {
+        case .alarm, .siren: return .emergency
+        case .loudBang, .glassBreaking, .carHorn, .doorbellKnock, .bell, .phoneRinging,
+             .babyCrying, .nameCalled, .dogBark, .cat, .thunder, .train, .chainsaw: return .attention
+        case .applianceBeep, .clapping, .cough, .toiletFlush, .typing, .snoring: return .informational
         }
     }
 
     var safetyCritical: Bool {
         switch self {
-        case .fireAlarm, .carHorn, .siren: return true
+        case .alarm, .siren, .loudBang, .glassBreaking, .carHorn: return true
         default: return false
+        }
+    }
+
+    /// Words the profile text agent accepts for this sound.
+    var aliases: Set<String> {
+        switch self {
+        case .alarm: return ["alarm", "fire alarm", "smoke alarm", "smoke detector", "alarm clock"]
+        case .siren: return ["siren", "emergency vehicle", "ambulance", "police"]
+        case .loudBang: return ["bang", "explosion", "gunshot", "fireworks"]
+        case .glassBreaking: return ["glass", "breaking glass", "glass breaking"]
+        case .carHorn: return ["car horn", "horn", "honking"]
+        case .doorbellKnock: return ["doorbell", "knock", "door", "buzzer"]
+        case .bell: return ["bell", "chime", "church bell"]
+        case .phoneRinging: return ["phone", "ringtone", "phone ringing", "telephone"]
+        case .babyCrying: return ["baby", "crying"]
+        case .nameCalled: return ["my name", "name called", "someone calls"]
+        case .dogBark: return ["dog", "bark", "barking"]
+        case .cat: return ["cat", "meow"]
+        case .applianceBeep: return ["beep", "beeps", "timer", "kitchen timer", "microwave"]
+        case .thunder: return ["thunder", "storm", "thunderstorm"]
+        case .train: return ["train", "railway"]
+        case .clapping: return ["clap", "clapping", "applause"]
+        case .cough: return ["cough", "coughing"]
+        case .toiletFlush: return ["toilet", "flush"]
+        case .typing: return ["typing", "keyboard"]
+        case .snoring: return ["snoring", "snore"]
+        case .chainsaw: return ["chainsaw", "power tool"]
         }
     }
 }
@@ -159,17 +247,23 @@ struct SoundDefinition: Codable, Equatable, Hashable, Identifiable {
 enum SoundLibrary {
     static func builtIns() -> [SoundDefinition] {
         SoundType.allCases.map { sound in
-            let emergency = sound == .fireAlarm || sound == .siren
+            let category = sound.category
+            let pattern: HapticPattern
+            switch category {
+            case .emergency: pattern = .urgentRepeat
+            case .attention: pattern = .longPulse
+            case .informational: pattern = .twoShort
+            }
             return SoundDefinition(
                 id: sound.id,
                 displayName: sound.displayName,
                 descriptionText: sound.descriptionText,
                 safetyCritical: sound.safetyCritical,
                 builtInType: sound,
-                defaultPriority: emergency ? .emergency : .attention,
-                defaultHapticPattern: emergency ? .urgentRepeat : .longPulse,
-                defaultHapticStrength: emergency ? .strong : .standard,
-                defaultRequiresAcknowledgement: emergency
+                defaultPriority: category,
+                defaultHapticPattern: pattern,
+                defaultHapticStrength: category == .emergency ? .strong : .standard,
+                defaultRequiresAcknowledgement: category == .emergency
             )
         }
     }

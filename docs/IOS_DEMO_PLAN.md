@@ -139,3 +139,46 @@ remembered. Both devices must be on the same Wi-Fi.
   Mac with int8 CPU: tiny.en about 150 ms, base.en about 300 ms, small.en about
   1 s per 3 s window; beam search added 10-30 % without changing output and
   word timestamps cost 4-6 s, so both stay off.
+- **Quiet-room false alarms (September 2026, second pass).** Replaying 20 s of
+  the Mac's own room noise through the hub path produced name alerts with no
+  one speaking: Whisper wrote the primed name onto noise ("Hi Rohan." x29 at a
+  fallback temperature, "Rohan Rohan." at 0.51 confidence) and the echo guard
+  only looked at log-probability. Measured per model on 15 noise-only windows:
+  with the name in the prompt or hotwords, tiny/base/small.en invented it on
+  10-11, 4-6 and 11-14 windows; with no prompt at all, on none, at the cost of
+  recall only on windows where the speech sat at or below the room level.
+  So the hub now decodes without a prompt or hotwords (`--speech-prime-names`
+  restores the old behaviour), skips a window entirely when Silero VAD hears
+  under 200 ms of speech in it (whole-window decision, never trimming audio),
+  rejects matches whose Whisper `no_speech_prob` exceeds 0.60 (noise measured
+  0.44-0.86, real names 0.00-0.47) or whose transcript repeats (compression
+  ratio over 2.4 or three hits in one window), and caps the decoder at 48 new
+  tokens so a stuck decode cannot hold the worker for 3-4 s. The replay now
+  gives zero name alerts on every noise and non-name window for all three
+  models. Name enrollment already records the unprompted spelling ("Rowan"),
+  and the phonetic matcher scores Rowan/Rohan at 0.9, so recall comes from
+  matching rather than priming.
+- **Sound catalog rebuilt around YAMNet (September 2026).** Real recordings
+  (ESC-50 and Wikimedia Commons clips through the float export, 1 s chunks)
+  showed the generic "Alarm" label firing the fire-alarm emergency pattern on
+  every siren, phone ring and alarm clock, "Emergency vehicle" turning car
+  horns into sirens, and "Engine knocking" counting as a knock. The
+  vocabulary now lives in one table, `backend/inference/sound_catalog.py`,
+  mirrored by the iOS `SoundType` enum: `alarm` (fire/smoke alarms, alarm
+  clocks, buzzers and the generic Alarm label, emergency), `siren` (siren
+  labels only), `loud_bang`, `glass_breaking`, `car_horn`, `doorbell_knock`,
+  `bell`, `phone_ringing`, `baby_crying`, `name_called`, `dog_bark`, `cat`,
+  `appliance_beep` (was kitchen_timer), `thunder`, `train`, `clapping`,
+  `cough`, `toilet_flush`, `typing`, `snoring`, `chainsaw`. Each built-in
+  profile enables the sounds that fit the situation and carries the rest
+  switched off. The hub maps the old `fire_alarm`/`kitchen_timer` ids from
+  older clients (the Android app) onto the new ones, and the iPhone migrates
+  saved profiles on load.
+- **Sound enrollment records one example at a time.** The guided "play it 4-6
+  times in ten seconds" session was too hard to perform. Each capture is now a
+  5 s recording of the sound played once (`/api/enrollment/start` with
+  `min_repeats: 1`; the hub keeps the loudest event plus any repeats that
+  resemble it). One example is enough to save; the screen suggests two or
+  three more from different spots, and from three examples on the matcher
+  requires a second example to agree before alerting (unchanged). The Android
+  guided flow still sends the default of three repeats.

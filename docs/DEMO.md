@@ -70,8 +70,8 @@ With live hardware: play a fire-alarm sound near the Uno Q microphone.
 Without the board mic, replay the synthetic fixture from a second terminal:
 
 ```powershell
-.venv\Scripts\python.exe -c "from backend.audio.demo_audio import write_demo_wav; from pathlib import Path; write_demo_wav(Path('fire_alarm.wav'), 'fire_alarm', duration_seconds=1.0)"
-.venv\Scripts\python.exe -m uno_q.linux.transport.hub_client fire_alarm.wav --pc 127.0.0.1:8765 --pairing-token $env:QUIETCUE_PAIRING_TOKEN
+.venv\Scripts\python.exe -c "from backend.audio.demo_audio import write_demo_wav; from pathlib import Path; write_demo_wav(Path('alarm.wav'), 'alarm', duration_seconds=1.0)"
+.venv\Scripts\python.exe -m uno_q.linux.transport.hub_client alarm.wav --pc 127.0.0.1:8765 --pairing-token $env:QUIETCUE_PAIRING_TOKEN
 ```
 
 Audience sees: `ALERT COMMAND urgent_repeat` followed by `HAPTIC delivered`
@@ -86,7 +86,7 @@ alerts repeat until acknowledged.
 2. Switch the active profile to `sleep` (via the Android app profile switcher,
    or restart the hub with `-AlertProfile sleep`).
 3. Replay `doorbell_knock` again: no alert — the sleep profile disables
-   doorbells — then replay `fire_alarm`: the emergency still fires.
+   doorbells — then replay `alarm`: the emergency still fires.
 
 Audience takeaway: user context controls what wakes you, but safety events
 always get through.
@@ -111,7 +111,7 @@ Android geofences.
 One command, zero dependencies, no network, no hardware:
 
 ```bash
-python3 scripts/run_no_hardware_demo.py --event fire_alarm --profile home
+python3 scripts/run_no_hardware_demo.py --event alarm --profile home
 python3 scripts/run_no_hardware_demo.py --event doorbell_knock --profile sleep
 ```
 
@@ -119,6 +119,6 @@ The first prints the completed loop with pattern and latency; the second
 prints that the doorbell was suppressed by the sleep profile. That pair alone
 demonstrates the full detection -> profile -> alert story.
 
-Available events: `doorbell_knock`, `car_horn`, `fire_alarm`, `siren`,
-`baby_crying`, `kitchen_timer`, `phone_ringing`.
+Available events: `doorbell_knock`, `car_horn`, `alarm`, `siren`,
+`baby_crying`, `appliance_beep`, `phone_ringing`.
 Available profiles: `home`, `work`, `driving`, `sleep`, `emergency`.

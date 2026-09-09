@@ -337,9 +337,9 @@ final class AppModel {
         return try await client.learnNameSpelling(name: name, knownSpellings: knownSpellings)
     }
 
-    func captureEnrollmentSession(durationMs: Int) async throws -> EnrollmentCapture {
+    func captureEnrollmentSession(durationMs: Int, minRepeats: Int = 1) async throws -> EnrollmentCapture {
         guard let client = hubClient else { throw HubStatusError(message: "Enter the Mac's address first") }
-        return try await client.captureEnrollmentSession(durationMs: durationMs)
+        return try await client.captureEnrollmentSession(durationMs: durationMs, minRepeats: minRepeats)
     }
 
     func setInferenceDevice(_ device: InferenceDevice) {

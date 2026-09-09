@@ -28,7 +28,10 @@ EVENT_PADDING_FRAMES = 2
 MAX_EVENTS = 12
 BACKGROUND_FRAMES = 20
 MIN_REPEAT_SIMILARITY = 0.86
-MIN_CONSISTENT_REPEATS = 3
+# Guided multi-repeat sessions (Android) still ask for three coherent repeats;
+# the iPhone flow records one example per session and adds more optionally.
+DEFAULT_MIN_REPEATS = 3
+MIN_CONSISTENT_REPEATS = DEFAULT_MIN_REPEATS
 
 
 class EnrollmentCaptureController:
@@ -41,12 +44,20 @@ class EnrollmentCaptureController:
         self._samples = array("h")
         self._speech_ranges: list[tuple[int, int]] = []
         self._result: dict[str, Any] = {}
+        self._min_repeats = DEFAULT_MIN_REPEATS
 
-    def start(self, duration_ms: int = DEFAULT_DURATION_MS) -> dict[str, Any]:
+    def start(
+        self,
+        duration_ms: int = DEFAULT_DURATION_MS,
+        min_repeats: int = DEFAULT_MIN_REPEATS,
+    ) -> dict[str, Any]:
         if not MIN_DURATION_MS <= duration_ms <= MAX_DURATION_MS:
             raise ValueError(
                 f"Enrollment duration must be between {MIN_DURATION_MS} and {MAX_DURATION_MS} ms"
             )
+        if not 1 <= min_repeats <= DEFAULT_MIN_REPEATS:
+            raise ValueError(f"min_repeats must be between 1 and {DEFAULT_MIN_REPEATS}")
+        self._min_repeats = min_repeats
         self._state = "recording"
         self._session_id = uuid.uuid4().hex
         self._target_samples = SAMPLE_RATE * duration_ms // 1_000
@@ -103,6 +114,7 @@ class EnrollmentCaptureController:
             positives, background = extract_enrollment_fingerprints(
                 self._samples,
                 blocked_ranges=self._speech_ranges,
+                min_repeats=self._min_repeats,
             )
             rejected_samples = sum(end - start for start, end in self._speech_ranges)
             self._result = {
@@ -128,7 +140,13 @@ def extract_enrollment_fingerprints(
     samples: array,
     *,
     blocked_ranges: list[tuple[int, int]] | None = None,
+    min_repeats: int = DEFAULT_MIN_REPEATS,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Fingerprint the sound events in a session and the quietest stretch.
+
+    With ``min_repeats`` of one, the session is expected to hold the sound
+    once; the loudest event wins and any repeats that resemble it are kept.
+    """
     if len(samples) < SAMPLE_RATE:
         raise ValueError("Enrollment session is too short")
     blocked_ranges = blocked_ranges or []
@@ -171,7 +189,7 @@ def extract_enrollment_fingerprints(
             }
         )
 
-    positives = _most_consistent_repeats(positives)
+    positives = _most_consistent_repeats(positives, min_repeats)
 
     background_start = _quietest_background_start(levels, blocked)
     background_samples = samples[
@@ -188,15 +206,25 @@ def extract_enrollment_fingerprints(
     return positives, background
 
 
-def _most_consistent_repeats(positives: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep the largest coherent family and discard incidental room sounds."""
-    if len(positives) < MIN_CONSISTENT_REPEATS:
+def _most_consistent_repeats(
+    positives: list[dict[str, Any]],
+    min_repeats: int = DEFAULT_MIN_REPEATS,
+) -> list[dict[str, Any]]:
+    """Keep the largest coherent family and discard incidental room sounds.
+
+    Families of equal size and cohesion are broken by the loudness of the seed
+    event, so a single-example session keeps the sound the user played rather
+    than a quieter chair creak.
+    """
+    if not positives:
+        raise ValueError("No clear sound was heard; play it closer to the microphone")
+    if len(positives) < min_repeats:
         raise ValueError(
             "Play the sound at least three times with a short quiet pause between repeats"
         )
 
     feature_vectors = [tuple(float(value) for value in item["features"]) for item in positives]
-    candidates: list[tuple[int, float, list[int]]] = []
+    candidates: list[tuple[int, float, float, list[int]]] = []
     for seed_index, seed in enumerate(feature_vectors):
         group = [
             index
@@ -209,10 +237,11 @@ def _most_consistent_repeats(positives: list[dict[str, Any]]) -> list[dict[str, 
             for right in group[position + 1 :]
         )
         pair_count = len(group) * (len(group) - 1) // 2
-        candidates.append((len(group), cohesion / max(pair_count, 1), group))
+        seed_loudness = float(positives[seed_index]["rms_dbfs"])
+        candidates.append((len(group), cohesion / max(pair_count, 1), seed_loudness, group))
 
-    _, _, best_group = max(candidates, key=lambda candidate: (candidate[0], candidate[1]))
-    if len(best_group) < MIN_CONSISTENT_REPEATS:
+    _, _, _, best_group = max(candidates, key=lambda candidate: candidate[:3])
+    if len(best_group) < min_repeats:
         raise ValueError(
             "The captured sounds were too different. Play the same sound at least three times"
         )

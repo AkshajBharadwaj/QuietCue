@@ -9,8 +9,19 @@ Design notes (September 2026 overhaul):
 * The event confidence is the phrase-match score alone. Whisper's sentence
   log-probability is a poor proxy for "the name was said", so it is only used
   as a coarse floor against hallucinated text (word-level when available).
-* Diagnostics carry the match score, ASR confidence, window length, and the
-  rejection reason, never the transcript.
+* Names are never primed into the decoder. Measured on quiet-room audio
+  (September 2026): with the name in ``initial_prompt`` or ``hotwords``
+  Whisper wrote it onto 30-90 % of noise-only windows (tiny/base/small.en),
+  and without any prompt onto none, at the cost of the very quietest windows.
+  Enrollment (``name_enrollment.py``) learns the unprompted spellings
+  ("Rowan" for Rohan) so recall comes from matching, not from priming.
+* A window only reaches the decoder when Silero VAD hears speech somewhere in
+  it. The whole window is kept or skipped; audio is never trimmed by VAD.
+* After decoding, Whisper's own ``no_speech_prob`` and a repetition check
+  reject the hallucination shapes noise produces ("Rohan Rohan.",
+  "Hi Rohan." x29 at a fallback temperature).
+* Diagnostics carry the match score, ASR confidence, no-speech probability,
+  VAD speech length, window length, and the rejection reason, never text.
 """
 
 from __future__ import annotations
@@ -21,6 +32,7 @@ import re
 import threading
 import time
 import unicodedata
+import zlib
 from array import array
 from collections import deque
 from concurrent.futures import Executor, Future, ThreadPoolExecutor, wait
@@ -61,6 +73,10 @@ class Transcript:
     text: str
     confidence: float | None = None
     words: tuple[TranscriptWord, ...] = ()
+    # Whisper's probability that the window held no speech (max over segments).
+    no_speech_probability: float | None = None
+    # Highest decoding temperature the fallback ladder reached.
+    temperature: float | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +118,12 @@ class FasterWhisperTranscriber:
     the next transcription loads the new weights.
     """
 
+    # Silero gate: lenient on purpose. Genuine speech in a 2.5 s window measured
+    # >= 750 ms even 10 dB under the room bed; most noise windows measured 0 ms.
+    VAD_THRESHOLD = 0.35
+    VAD_MIN_SPEECH_MS = 100
+    MAX_NEW_TOKENS = 48
+
     def __init__(
         self,
         model_name: str = DEFAULT_WHISPER_MODEL,
@@ -118,6 +140,35 @@ class FasterWhisperTranscriber:
         self.language = language
         self._model: object | None = None
         self._model_lock = threading.Lock()
+        self._vad_unavailable = False
+
+    def detect_speech_ms(self, pcm: bytes, sample_rate: int) -> int | None:
+        """Milliseconds of speech Silero VAD hears in the window; None if unavailable.
+
+        Unlike ``vad_filter=True`` this never cuts audio out of the window: the
+        recognizer only uses it to skip windows that contain no speech at all.
+        """
+        if sample_rate != 16_000:
+            raise ValueError("Faster-Whisper VAD input must be 16 kHz")
+        if self._vad_unavailable:
+            return None
+        try:
+            import numpy as np
+            from faster_whisper.vad import VadOptions, get_speech_timestamps
+        except ImportError:
+            self._vad_unavailable = True
+            return None
+        waveform = np.frombuffer(pcm[: len(pcm) - len(pcm) % 2], dtype="<i2").astype(np.float32) / 32768.0
+        try:
+            spans = get_speech_timestamps(
+                waveform,
+                VadOptions(threshold=self.VAD_THRESHOLD, min_speech_duration_ms=self.VAD_MIN_SPEECH_MS),
+            )
+        except Exception as exc:  # A missing VAD asset must not disable name detection.
+            LOGGER.warning("Silero VAD unavailable; transcribing every window: %s", exc)
+            self._vad_unavailable = True
+            return None
+        return int(sum(span["end"] - span["start"] for span in spans) * 1_000 // sample_rate)
 
     def set_model(self, model_name: str) -> bool:
         """Select a different Whisper model; returns True when it changed."""
@@ -166,6 +217,11 @@ class FasterWhisperTranscriber:
             word_timestamps=False,
             initial_prompt=prompt or None,
             hotwords=", ".join(hotwords or []) or None,
+            # A 2.5 s window holds a dozen words at most. Capping the decoder
+            # bounds the repetition loops noise triggers: base.en noise windows
+            # went from ~2 s (max 3.8 s) to ~0.4 s (max 1 s) with speech output
+            # unchanged, so a stuck decode can no longer delay the next window.
+            max_new_tokens=self.MAX_NEW_TOKENS,
         )
         completed = list(segments)
         text = " ".join(segment.text.strip() for segment in completed if segment.text.strip()).strip()
@@ -173,7 +229,14 @@ class FasterWhisperTranscriber:
             return None
         mean_log_probability = sum(float(segment.avg_logprob) for segment in completed) / len(completed)
         confidence = max(0.0, min(1.0, math.exp(min(0.0, mean_log_probability))))
-        return Transcript(text=text, confidence=round(confidence, 4))
+        no_speech = max(float(segment.no_speech_prob) for segment in completed)
+        temperature = max(float(getattr(segment, "temperature", 0.0) or 0.0) for segment in completed)
+        return Transcript(
+            text=text,
+            confidence=round(confidence, 4),
+            no_speech_probability=round(max(0.0, min(1.0, no_speech)), 4),
+            temperature=round(temperature, 2),
+        )
 
     def _load_model(self) -> object:
         if self._model is not None:
@@ -205,6 +268,15 @@ ASR_CONFIDENCE_FLOOR = 0.20
 # measured 0.64-0.92 on tiny/base/small, so those shapes need more confidence.
 ECHO_CONFIDENCE_FLOOR = 0.50
 ECHO_MAX_TOKENS = 3
+# Whisper's own no-speech estimate separates noise from speech far better than
+# its log-probability: hallucinated names on room noise measured 0.44-0.86
+# (tiny/base/small.en), genuine names at or above the room level 0.00-0.47.
+MAX_NO_SPEECH_PROBABILITY = 0.60
+# A decoder stuck in a loop ("Hi Rohan. Hi Rohan. ..." x29) compresses far
+# better than speech; Whisper uses the same 2.4 ratio for its own fallback.
+LOOP_COMPRESSION_RATIO = 2.4
+# A 2.5 s window cannot hold a name three or more times.
+LOOP_MIN_HITS = 3
 
 
 def evaluate_phrase_match(
@@ -213,12 +285,14 @@ def evaluate_phrase_match(
     sensitivity: float = 0.6,
     asr_floor: float = ASR_CONFIDENCE_FLOOR,
     echo_floor: float = ECHO_CONFIDENCE_FLOOR,
+    max_no_speech: float = MAX_NO_SPEECH_PROBABILITY,
 ) -> PhraseEvaluation:
     """Fuzzily match bounded token windows without exposing transcript text.
 
-    The returned confidence is the match score. ASR confidence is only a floor
-    against hallucinated text: a low one everywhere, a higher one for the
-    transcript shapes a prompt echo produces.
+    The returned confidence is the match score. The other signals only reject:
+    Whisper's no-speech probability and a repetition check catch what noise
+    produces, and ASR confidence is a low floor against hallucinated text with
+    a higher one for the transcript shapes a prompt echo produces.
     """
     if not 0.0 <= sensitivity <= 1.0:
         raise ValueError("Speech sensitivity must be between zero and one")
@@ -252,6 +326,13 @@ def evaluate_phrase_match(
         if score >= max(0.0, sensitivity - 0.15):
             LOGGER.debug("Rejected near-match for configured phrase %r at %.3f", phrase, score)
         return PhraseEvaluation(None, phrase, round(score, 4), round(asr_confidence, 4), "below_sensitivity")
+    no_speech = transcript.no_speech_probability
+    if no_speech is not None and no_speech > max_no_speech:
+        LOGGER.debug("Rejected %r: no-speech probability %.3f", phrase, no_speech)
+        return PhraseEvaluation(None, phrase, round(score, 4), round(asr_confidence, 4), "no_speech_probability")
+    if hits >= LOOP_MIN_HITS or _compression_ratio(transcript.text) > LOOP_COMPRESSION_RATIO:
+        LOGGER.debug("Rejected %r: repetitive transcript (%d hits)", phrase, hits)
+        return PhraseEvaluation(None, phrase, round(score, 4), round(asr_confidence, 4), "hallucination_loop")
     if asr_confidence < asr_floor:
         LOGGER.debug("Rejected %r: ASR confidence %.3f below floor", phrase, asr_confidence)
         return PhraseEvaluation(None, phrase, round(score, 4), round(asr_confidence, 4), "asr_confidence_floor")
@@ -294,6 +375,10 @@ def _tokens_with_confidence(transcript: Transcript) -> tuple[list[str], list[flo
 # --------------------------------------------------------------------------- buffering
 
 
+# Windows with less Silero-detected speech than this skip the decoder entirely.
+MIN_VAD_SPEECH_MS = 200
+
+
 @dataclass(frozen=True)
 class SpeechDiagnostics:
     """Metadata about one transcription window; never contains text."""
@@ -304,6 +389,8 @@ class SpeechDiagnostics:
     matched: bool
     reject_reason: str | None
     transcribed: bool
+    speech_ms: int | None = None
+    no_speech_probability: float | None = None
 
     def to_wire(self) -> dict[str, object]:
         return asdict(self)
@@ -539,15 +626,31 @@ def _recognize(
     sensitivity: float,
 ) -> SpeechRecognition:
     started = time.perf_counter()
+    window_ms = _pcm_duration_ms(pcm, sample_rate)
+    speech_ms: int | None = None
+    detect = getattr(transcriber, "detect_speech_ms", None)
+    if callable(detect):
+        speech_ms = detect(pcm, sample_rate)
+        if speech_ms is not None and speech_ms < MIN_VAD_SPEECH_MS:
+            inference_ms = (time.perf_counter() - started) * 1_000
+            return SpeechRecognition(
+                transcript=None,
+                phrase_match=None,
+                inference_ms=round(inference_ms, 2),
+                diagnostics=SpeechDiagnostics(
+                    window_ms, None, None, False, "vad_no_speech", False, speech_ms=speech_ms
+                ),
+            )
     transcript = transcriber.transcribe_pcm16(pcm, sample_rate, prompt, hotwords)
     inference_ms = (time.perf_counter() - started) * 1_000
-    window_ms = _pcm_duration_ms(pcm, sample_rate)
     if transcript is None:
         return SpeechRecognition(
             transcript=None,
             phrase_match=None,
             inference_ms=round(inference_ms, 2),
-            diagnostics=SpeechDiagnostics(window_ms, None, None, False, "no_speech", False),
+            diagnostics=SpeechDiagnostics(
+                window_ms, None, None, False, "no_speech", False, speech_ms=speech_ms
+            ),
         )
     evaluation = evaluate_phrase_match(transcript, phrase_triggers, sensitivity)
     return SpeechRecognition(
@@ -561,6 +664,8 @@ def _recognize(
             matched=evaluation.match is not None,
             reject_reason=evaluation.reject_reason,
             transcribed=True,
+            speech_ms=speech_ms,
+            no_speech_probability=transcript.no_speech_probability,
         ),
     )
 
@@ -601,6 +706,14 @@ def _normalize(value: str) -> str:
     without_marks = "".join(character for character in decomposed if not unicodedata.combining(character))
     words_only = re.sub(r"[^a-z0-9]+", " ", without_marks)
     return " ".join(words_only.split())
+
+
+def _compression_ratio(text: str) -> float:
+    """Whisper's repetition measure: bytes of text per byte of zlib output."""
+    encoded = text.encode("utf-8")
+    if not encoded:
+        return 0.0
+    return len(encoded) / max(1, len(zlib.compress(encoded)))
 
 
 def _phrase_similarity(left: str, right: str) -> float:

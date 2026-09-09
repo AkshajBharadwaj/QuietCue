@@ -43,7 +43,7 @@ xcrun simctl boot "iPhone 17 Pro"; open -a Simulator
 xcrun simctl install booted <DerivedData>/Build/Products/Debug-iphonesimulator/QuietCue.app
 xcrun simctl privacy booted grant microphone com.quietcue.app.ios
 SIMCTL_CHILD_QUIETCUE_HUB_HOST=127.0.0.1 xcrun simctl launch booted com.quietcue.app.ios
-python3 scripts/generate_demo_audio.py fire_alarm /tmp/fire.wav --duration 6 && afplay /tmp/fire.wav
+python3 scripts/generate_demo_audio.py alarm /tmp/fire.wav --duration 6 && afplay /tmp/fire.wav
 ```
 
 Environment overrides read at launch: `QUIETCUE_HUB_HOST`,

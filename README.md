@@ -187,7 +187,7 @@ needed for this deterministic end-to-end verification.
 git clone https://github.com/AkshajBharadwaj/QuietCue.git
 cd QuietCue
 
-python3 scripts/run_no_hardware_demo.py --event fire_alarm --profile home
+python3 scripts/run_no_hardware_demo.py --event alarm --profile home
 python3 scripts/run_no_hardware_demo.py --event doorbell_knock --profile sleep
 ```
 

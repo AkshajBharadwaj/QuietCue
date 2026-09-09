@@ -4,20 +4,26 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from backend.inference.sound_catalog import EVENT_IDS, default_category, is_safety_critical
 from backend.profiles.engine import AlertProfile, QuietHours, SoundRule
 from backend.profiles.speech_context import SpeechMode
 
 
-EVENTS = (
-    "fire_alarm",
-    "doorbell_knock",
-    "car_horn",
-    "siren",
-    "name_called",
-    "baby_crying",
-    "kitchen_timer",
-    "phone_ringing",
-)
+EVENTS = EVENT_IDS
+
+# Sounds that make sense in each situation; everything else in the catalog is
+# present in the profile but switched off, so the user can enable it.
+_HOME_ENABLED = {
+    "alarm", "siren", "loud_bang", "glass_breaking", "doorbell_knock", "bell",
+    "phone_ringing", "baby_crying", "name_called", "dog_bark", "cat",
+    "appliance_beep", "thunder",
+}
+_WORK_ENABLED = {
+    "alarm", "siren", "loud_bang", "glass_breaking", "doorbell_knock",
+    "phone_ringing", "name_called", "clapping",
+}
+_DRIVING_ENABLED = {"alarm", "siren", "loud_bang", "car_horn", "train", "name_called"}
+_SLEEP_ENABLED = {"alarm", "siren", "loud_bang", "glass_breaking", "baby_crying", "dog_bark", "name_called"}
 
 
 def get_profile(profile_id: str) -> AlertProfile:
@@ -42,7 +48,7 @@ def _home() -> AlertProfile:
     return _profile(
         "home",
         "Home",
-        disabled={"car_horn"},
+        disabled=set(EVENTS) - _HOME_ENABLED,
         thresholds={"doorbell_knock": 0.55, "baby_crying": 0.50},
     )
 
@@ -51,7 +57,7 @@ def _work() -> AlertProfile:
     return _profile(
         "work",
         "Work / School",
-        disabled={"baby_crying", "kitchen_timer"},
+        disabled=set(EVENTS) - _WORK_ENABLED,
         thresholds={"name_called": 0.48, "phone_ringing": 0.65},
         phrase_triggers=("front desk",),
         speech_mode=SpeechMode.ALWAYS_ON,
@@ -63,7 +69,7 @@ def _driving() -> AlertProfile:
     return _profile(
         "driving",
         "Driving / Transit",
-        disabled={"doorbell_knock", "baby_crying", "kitchen_timer", "phone_ringing"},
+        disabled=set(EVENTS) - _DRIVING_ENABLED,
         thresholds={"car_horn": 0.42, "siren": 0.45},
         overrides={
             "car_horn": {
@@ -81,7 +87,7 @@ def _sleep() -> AlertProfile:
     return _profile(
         "sleep",
         "Sleep / Night",
-        disabled={"doorbell_knock", "car_horn", "kitchen_timer", "phone_ringing"},
+        disabled=set(EVENTS) - _SLEEP_ENABLED,
         thresholds={"baby_crying": 0.42},
         quiet_hours=QuietHours(True, 22 * 60, 7 * 60),
         speech_mode=SpeechMode.OFF,
@@ -97,7 +103,7 @@ def _sleep() -> AlertProfile:
 
 
 def _emergency() -> AlertProfile:
-    critical = {"fire_alarm", "car_horn", "siren"}
+    critical = {event for event in EVENTS if is_safety_critical(event)}
     rules = tuple(
         replace(
             _base_rule(event),
@@ -148,13 +154,15 @@ def _profile(
 
 
 def _base_rule(event: str) -> SoundRule:
-    emergency = event in {"fire_alarm", "siren"}
+    category = default_category(event)
+    emergency = category == "emergency"
+    pattern = {"emergency": "urgent_repeat", "attention": "long_pulse"}.get(category, "two_short")
     return SoundRule(
         event=event,
         enabled=True,
         confidence_threshold=0.45 if emergency else 0.60,
-        category="emergency" if emergency else "attention",
-        pattern="urgent_repeat" if emergency else "long_pulse",
+        category=category,
+        pattern=pattern,
         strength="strong" if emergency else "standard",
         requires_ack=emergency,
         cooldown_seconds=_default_cooldown_seconds(event, emergency),

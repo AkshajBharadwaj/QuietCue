@@ -77,6 +77,9 @@ class QuietCueHubServer:
         self._enrollment_capture = enrollment_capture or EnrollmentCaptureController()
         self._name_enrollment = name_enrollment or NameEnrollmentController()
         self._speech_model_override: str | None = None
+        # Priming Whisper with the user's name made it hallucinate that name on
+        # quiet-room noise (see backend/inference/speech.py); off by default.
+        self.prime_speech_names = False
         self._control_queues: dict[str, list[dict[str, object]]] = {}
         self._samsung_proxy = samsung_proxy
         self._requested_inference_device = COPILOT_PC
@@ -323,8 +326,8 @@ class QuietCueHubServer:
                 sample_rate,
                 body.get("edge_analysis") if isinstance(body.get("edge_analysis"), dict) else None,
                 list(resolved_phrases),
-                speech_context.prompt(),
-                list(speech_context.hotwords()),
+                speech_context.prompt() if self.prime_speech_names else "",
+                list(speech_context.hotwords()) if self.prime_speech_names else [],
                 profile.speech_enabled(),
                 speech_context.settings.sensitivity,
             )
@@ -604,6 +607,7 @@ async def serve(
     speech_compute_type: str,
     speech_language: str,
     phone_endpoint: str,
+    prime_speech_names: bool = False,
 ) -> None:
     profile = get_profile(profile_id)
     state_store = AlertStateStore(profile, jsonl_path=event_log)
@@ -632,6 +636,7 @@ async def serve(
         enrollment_capture=enrollment_capture,
         samsung_proxy=samsung_proxy,
     )
+    hub.prime_speech_names = prime_speech_names
 
     def update_profile(document: dict[str, object]) -> dict[str, object]:
         updated = decode_profile(document)
@@ -678,10 +683,11 @@ async def serve(
     LOGGER.info("Classifier=%s profile=%s", classifier, profile.name)
     LOGGER.info("Samsung inference=%s", phone_endpoint or "not configured")
     LOGGER.info(
-        "Speech model=%s device=%s compute=%s",
+        "Speech model=%s device=%s compute=%s name priming=%s",
         speech_model or "disabled",
         speech_device,
         speech_compute_type,
+        "on" if prime_speech_names else "off",
     )
     try:
         async with audio_server, state_server:
@@ -735,6 +741,15 @@ def _parse_args() -> argparse.Namespace:
         help="Speech language code or auto (default: en)",
     )
     parser.add_argument(
+        "--speech-prime-names",
+        action="store_true",
+        default=os.environ.get("QUIETCUE_SPEECH_PRIME_NAMES", "") == "1",
+        help=(
+            "Put the configured names into Whisper's prompt/hotwords. Slightly better recall "
+            "on very quiet speech, but Whisper then invents the name on room noise (default: off)"
+        ),
+    )
+    parser.add_argument(
         "--event-log",
         type=Path,
         help="Optional metadata-only JSONL event log (raw audio is never written)",
@@ -776,6 +791,7 @@ def main() -> None:
                 args.speech_compute_type,
                 args.speech_language,
                 args.phone_endpoint.strip(),
+                args.speech_prime_names,
             )
         )
     except KeyboardInterrupt:
