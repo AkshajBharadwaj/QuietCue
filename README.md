@@ -74,8 +74,10 @@ flowchart LR
    raw recordings.
 2. The Uno Q streams short PCM chunks over Wi-Fi to one selected inference hub:
    the Copilot+ PC or the Android companion.
-3. YAMNet classifies environmental audio continuously. Speech transcription is
-   gated and runs only when voice activity and the active profile require it.
+3. YAMNet classifies environmental audio continuously. Speech transcription
+   runs only when the active profile enables it: the hub keeps a short rolling
+   buffer and hands Whisper one utterance window at a time, so quiet names and
+   names spoken across a chunk boundary are still heard.
 4. QuietCue applies confidence thresholds, quiet hours, cooldowns, custom sound
    matches, and the active Home, Work, Driving, Sleep, or Emergency profile.
 5. Approved alerts return as small semantic commands such as `urgent_repeat`;

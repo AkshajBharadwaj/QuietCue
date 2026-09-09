@@ -20,7 +20,7 @@ final class ProfileSyncCodecTests: XCTestCase {
             identity: UserIdentity(displayName: "Akshaj", pronunciation: "Ak-shudge", aliases: ["AK"], recognitionPhrases: ["hey akshaj"]),
             people: [PersonMemory(id: "p1", name: "Maya", relationship: "Sister", aliases: ["May"], notes: "Visits on weekends")],
             contexts: [ContextMemory(id: "c1", title: "Tuesday class", details: "Accessibility design class in Building 4.")],
-            speechSettings: SpeechSettings(enabled: true, model: .tinyEn, sensitivity: 0.65, listenForIdentity: true, listenForPeople: false, globalPhrases: ["excuse me"])
+            speechSettings: SpeechSettings(enabled: true, model: .tinyEn, sensitivity: 0.65, listenForPeople: false, globalPhrases: ["excuse me"])
         )
         return (catalog, bank)
     }
@@ -42,6 +42,7 @@ final class ProfileSyncCodecTests: XCTestCase {
         let speech = try XCTUnwrap(json["speech_context"] as? [String: Any])
         XCTAssertEqual((speech["identity"] as? [String: Any])?["name"] as? String, "Akshaj")
         XCTAssertEqual((speech["settings"] as? [String: Any])?["model"] as? String, "tiny_en")
+        XCTAssertEqual((speech["settings"] as? [String: Any])?["listen_for_identity"] as? Bool, true, "an enrolled name is always listened for")
     }
 
     func testEncodingIsDeterministic() throws {

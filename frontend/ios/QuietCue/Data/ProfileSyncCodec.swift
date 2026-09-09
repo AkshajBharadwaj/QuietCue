@@ -80,7 +80,8 @@ enum ProfileSyncCodec {
                 "enabled": settings.enabled,
                 "model": settings.model.rawValue,
                 "sensitivity": jsonNumber(settings.sensitivity),
-                "listen_for_identity": settings.listenForIdentity,
+                // An enrolled name is always listened for; the hub key stays for compatibility.
+                "listen_for_identity": true,
                 "listen_for_people": settings.listenForPeople,
                 "global_phrases": settings.globalPhrases,
             ] as [String: Any],

@@ -25,12 +25,48 @@ class SpeechContextTest(unittest.TestCase):
 
         self.assertEqual(
             context.identity_triggers(),
-            ("Akshaj", "Ak-shudge", "Ak", "Hey oxides"),
+            ("Akshaj", "Ak", "Hey oxides"),
+            "pronunciation guides are for people; Whisper never emits them",
         )
         self.assertIn("Maya", context.hotwords())
         self.assertIn("Tuesday class", context.hotwords())
-        self.assertIn("visits on weekends", context.prompt())
-        self.assertLessEqual(len(context.prompt()), 800)
+        self.assertNotIn("Ak-shudge", context.hotwords())
+        self.assertNotIn("My-uh", context.hotwords())
+        prompt = context.prompt()
+        self.assertTrue(prompt.startswith("Akshaj. Hey Akshaj. Ak. Maya. May."), prompt)
+        self.assertNotIn("visits on weekends", prompt, "prose context invites hallucination; only spoken forms")
+        self.assertNotIn("The user's name", prompt)
+        self.assertLessEqual(len(prompt), 400)
+
+    def test_prompt_is_bounded_at_a_word_boundary(self) -> None:
+        context = SpeechContext(
+            people=tuple(KnownPerson(f"Person{index:03d}") for index in range(80)),
+        )
+        prompt = context.prompt()
+        self.assertLessEqual(len(prompt), 400)
+        self.assertTrue(prompt.endswith("."), prompt[-20:])
+
+    def test_small_model_choice_is_accepted(self) -> None:
+        profile = decode_profile(
+            {
+                "id": "home",
+                "name": "Home",
+                "speech_context": {"settings": {"model": "small_en"}},
+                "sound_rules": [
+                    {
+                        "event": "name_called",
+                        "enabled": True,
+                        "confidence_threshold": 0.6,
+                        "category": "attention",
+                        "pattern": "long_pulse",
+                        "strength": "standard",
+                        "requires_ack": False,
+                        "cooldown_seconds": 20,
+                    }
+                ],
+            }
+        )
+        self.assertEqual(profile.speech_context.settings.model, SpeechModel.SMALL_EN)
 
     def test_profile_sync_decodes_user_approved_context(self) -> None:
         profile = decode_profile(

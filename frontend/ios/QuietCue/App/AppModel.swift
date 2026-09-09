@@ -173,6 +173,19 @@ final class AppModel {
     func clearMemoryBank() { run("Private memory bank deleted") { memoryStore.clearAll() } }
     func saveSpeechSettings(_ settings: SpeechSettings) { run("Speech settings saved") { try memoryStore.saveSpeechSettings(settings) } }
 
+    /// Settings-page edits apply immediately; the next poll syncs them to the hub.
+    func updateSpeechSettings(_ transform: (inout SpeechSettings) -> Void) {
+        var settings = memoryBank.speechSettings
+        transform(&settings)
+        guard settings != memoryBank.speechSettings else { return }
+        do {
+            try memoryStore.saveSpeechSettings(settings)
+            reloadAll()
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
     // MARK: Smart places
 
     func addCurrentSmartPlace(name: String, profileId: String, radiusMeters: Float) {
@@ -316,13 +329,12 @@ final class AppModel {
 
     // MARK: Hub actions
 
-    /// Voice check for name enrollment. The edge stream owns the microphone,
-    /// so it pauses for the few seconds the recognizer listens.
-    func recognizeNameSample() async throws -> String {
-        let wasStreaming = edge.isRunning
-        if wasStreaming { edge.stop() }
-        defer { if wasStreaming { edge.start() } }
-        return try await NameRecognizer().recognize()
+    /// Ask the Mac's Whisper model how it spells the name. The hub listens to
+    /// the live iPhone stream, so the edge session must be running.
+    func learnNameSpelling(name: String, knownSpellings: [String]) async throws -> NameSpellingResult {
+        guard let client = hubClient else { throw HubStatusError(message: "Enter the Mac's address on the Home tab first") }
+        guard edge.isRunning else { throw HubStatusError(message: "Connect the iPhone microphone to the hub first") }
+        return try await client.learnNameSpelling(name: name, knownSpellings: knownSpellings)
     }
 
     func captureEnrollmentSession(durationMs: Int) async throws -> EnrollmentCapture {

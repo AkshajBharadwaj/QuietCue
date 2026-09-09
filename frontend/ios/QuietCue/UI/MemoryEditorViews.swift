@@ -1,83 +1,7 @@
 import SwiftUI
 
-/// Ports of the Android `MemoryEditorScreens`.
-
-struct SpeechSettingsView: View {
-    @Environment(\.scheme) private var scheme
-    var initial: SpeechSettings
-    var identityAvailable: Bool
-    var onBack: () -> Void
-    var onSave: (SpeechSettings) -> Void
-
-    @State private var enabled: Bool
-    @State private var model: SpeechModel
-    @State private var sensitivity: Float
-    @State private var listenForIdentity: Bool
-    @State private var listenForPeople: Bool
-    @State private var phrases: String
-
-    init(initial: SpeechSettings, identityAvailable: Bool, onBack: @escaping () -> Void, onSave: @escaping (SpeechSettings) -> Void) {
-        self.initial = initial
-        self.identityAvailable = identityAvailable
-        self.onBack = onBack
-        self.onSave = onSave
-        _enabled = State(initialValue: initial.enabled)
-        _model = State(initialValue: initial.model)
-        _sensitivity = State(initialValue: initial.sensitivity)
-        _listenForIdentity = State(initialValue: initial.listenForIdentity)
-        _listenForPeople = State(initialValue: initial.listenForPeople)
-        _phrases = State(initialValue: initial.globalPhrases.joined(separator: ", "))
-    }
-
-    var body: some View {
-        EditorScaffold(title: "Speech and names", onBack: onBack) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Speech stays on the active hub. Audio and transcripts are never saved; only a matched configured phrase can become an alert.")
-                    .font(MaterialType.bodyLarge).foregroundStyle(scheme.onSurfaceVariant)
-                MaterialCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SwitchRow(title: "Enable speech detection",
-                                  description: "Profiles set to Off still remain silent; Always on profiles override this switch.",
-                                  isOn: $enabled)
-                        Text("On-device model").font(MaterialType.labelLarge)
-                        OptionChips(options: SpeechModel.allCases, selected: model, label: \.displayName) { model = $0 }
-                        Text("Match sensitivity: \(Int((sensitivity * 100).rounded()))%").font(MaterialType.labelLarge)
-                        SliderM(value: Binding(get: { sensitivity }, set: { sensitivity = ($0 * 20).rounded() / 20 }),
-                                range: 0.4...0.95, step: 0.05)
-                    }
-                    .padding(16)
-                }
-                MaterialCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Who and what triggers an alert").font(MaterialType.titleLarge)
-                        SwitchRow(
-                            title: "My name and aliases",
-                            description: identityAvailable ? "Use your approved identity enrollment as alert phrases." : "Enroll your name from My context to use this option.",
-                            isOn: Binding(get: { listenForIdentity && identityAvailable }, set: { listenForIdentity = $0 }),
-                            enabled: identityAvailable
-                        )
-                        SwitchRow(title: "People in my context",
-                                  description: "Off by default. Turn on only if their names should alert you too.",
-                                  isOn: $listenForPeople)
-                        MaterialTextField(label: "Global phrases", text: $phrases, placeholder: "excuse me, front desk",
-                                          supporting: "Separate up to 20 phrases with commas.", minLines: 2, limit: 820)
-                    }
-                    .padding(16)
-                }
-                FilledButton(label: "Save speech settings") {
-                    onSave(SpeechSettings(
-                        enabled: enabled,
-                        model: model,
-                        sensitivity: sensitivity,
-                        listenForIdentity: listenForIdentity,
-                        listenForPeople: listenForPeople,
-                        globalPhrases: parseCommaList(phrases, maximum: 20).map { String($0.prefix(40)) }
-                    ))
-                }
-            }
-        }
-    }
-}
+/// Ports of the Android `MemoryEditorScreens`. Global speech switches moved to
+/// the Settings tab; these editors only teach QuietCue names and details.
 
 struct IdentityEnrollmentView: View {
     @Environment(AppModel.self) private var app
@@ -87,10 +11,10 @@ struct IdentityEnrollmentView: View {
     var onSave: (UserIdentity) -> Void
 
     @State private var name: String
-    @State private var pronunciation: String
     @State private var aliases: String
-    @State private var samples: [String]
+    @State private var spellings: [String]
     @State private var listening = false
+    @State private var lastResult: String? = nil
     @State private var error: String? = nil
 
     init(initial: UserIdentity?, onBack: @escaping () -> Void, onSave: @escaping (UserIdentity) -> Void) {
@@ -98,60 +22,98 @@ struct IdentityEnrollmentView: View {
         self.onBack = onBack
         self.onSave = onSave
         _name = State(initialValue: initial?.displayName ?? "")
-        _pronunciation = State(initialValue: initial?.pronunciation ?? "")
         _aliases = State(initialValue: initial?.aliases.joined(separator: ", ") ?? "")
-        _samples = State(initialValue: initial?.recognitionPhrases ?? [])
+        _spellings = State(initialValue: initial?.recognitionPhrases ?? [])
+    }
+
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
+    private var canListen: Bool {
+        !listening && !trimmedName.isEmpty && spellings.count < UserIdentity.maxLearnedSpellings && app.edge.isRunning
     }
 
     var body: some View {
         EditorScaffold(title: "Enroll your name", onBack: onBack) {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Your name and approved variants help the local speech model recognize when someone calls you.")
+                Text("Once your name is saved, QuietCue alerts you whenever someone says it. Speech detection itself is switched on or off from Settings.")
                     .font(MaterialType.bodyLarge).foregroundStyle(scheme.onSurfaceVariant)
                 MaterialCard {
                     VStack(alignment: .leading, spacing: 12) {
-                        MaterialTextField(label: "Your name", text: $name, placeholder: "Akshaj", limit: 60)
-                        MaterialTextField(label: "Pronunciation guide", text: $pronunciation, placeholder: "Ak-shudge", limit: 80)
-                        MaterialTextField(label: "Nicknames or aliases", text: $aliases, supporting: "Separate entries with commas.", limit: 320)
+                        MaterialTextField(label: "Your name", text: $name, placeholder: "Rohan", limit: 60)
+                        MaterialTextField(label: "Nicknames", text: $aliases, placeholder: "Ro, Roh",
+                                          supporting: "Optional. Separate entries with commas.", limit: 320)
                     }
                     .padding(16)
                 }
                 MaterialCard {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Voice checks").font(MaterialType.titleLarge)
-                        Text("Have someone say your name naturally. The phone keeps only the recognized text, never the recording. You can save up to three checks.")
+                        Text("Teach the hub your name").font(MaterialType.titleLarge)
+                        Text("Tap Listen, then have someone say your name once, naturally. The Mac's speech model reports how it spelled what it heard, and that spelling is matched from then on. Only the spelling is kept.")
                             .font(MaterialType.bodyLarge).foregroundStyle(scheme.onSurfaceVariant)
-                        ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
-                            HStack {
-                                Text("\(index + 1). “\(sample)”").font(MaterialType.bodyLarge)
-                                Spacer()
-                                IconButtonM(systemName: "trash", label: "Remove voice check \(index + 1)") { samples.remove(at: index) }
+                        if !spellings.isEmpty {
+                            Text("Learned spellings").font(MaterialType.labelLarge)
+                            FlowRowM {
+                                ForEach(spellings, id: \.self) { spelling in
+                                    HStack(spacing: 6) {
+                                        Text(spelling).font(MaterialType.labelLarge)
+                                        Button {
+                                            spellings.removeAll { $0 == spelling }
+                                        } label: {
+                                            Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("Remove spelling \(spelling)")
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .frame(minHeight: 32)
+                                    .foregroundStyle(scheme.onSecondaryContainer)
+                                    .background(scheme.secondaryContainer)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                }
                             }
                         }
-                        FilledButton(label: listening ? "Listening…" : "Record voice check \(samples.count + 1)", icon: "mic.fill",
-                                     enabled: !listening && samples.count < 3) {
+                        FilledButton(label: listening ? "Listening for 4 seconds…" : "Listen for my name", icon: "mic.fill", enabled: canListen) {
                             Task {
                                 listening = true
                                 error = nil
+                                lastResult = nil
                                 do {
-                                    let text = try await app.recognizeNameSample()
-                                    if !samples.contains(where: { $0.caseInsensitiveCompare(text) == .orderedSame }) { samples.append(text) }
+                                    let result = try await app.learnNameSpelling(
+                                        name: trimmedName,
+                                        knownSpellings: parseCommaList(aliases, maximum: 10) + spellings
+                                    )
+                                    let fresh = result.heard.filter { heard in
+                                        !spellings.contains { $0.caseInsensitiveCompare(heard) == .orderedSame }
+                                    }
+                                    let room = max(0, UserIdentity.maxLearnedSpellings - spellings.count)
+                                    spellings.append(contentsOf: fresh.prefix(room))
+                                    if !fresh.isEmpty {
+                                        lastResult = "Heard it as “\(fresh.joined(separator: "”, “"))”. Saved as a spelling to match."
+                                    } else if result.recognized {
+                                        lastResult = "The hub already recognizes “\(trimmedName)”. Try again from farther away or in a sentence to catch other spellings."
+                                    } else {
+                                        lastResult = "Nothing new was learned."
+                                    }
                                 } catch {
                                     self.error = error.localizedDescription
                                 }
                                 listening = false
                             }
                         }
+                        if !app.edge.isRunning {
+                            Text("Connect the iPhone microphone to the Mac hub on the Home tab to listen.")
+                                .font(MaterialType.bodyLarge).foregroundStyle(scheme.onSurfaceVariant)
+                        }
+                        if let lastResult { Text(lastResult).font(MaterialType.bodyLarge).foregroundStyle(scheme.primary) }
                     }
                     .padding(16)
                 }
                 if let error { Text(error).font(MaterialType.bodyLarge).foregroundStyle(scheme.error) }
-                FilledButton(label: "Save name enrollment", enabled: !name.trimmingCharacters(in: .whitespaces).isEmpty && !listening) {
+                FilledButton(label: "Save name", enabled: !trimmedName.isEmpty && !listening) {
                     onSave(UserIdentity(
-                        displayName: name.trimmingCharacters(in: .whitespaces),
-                        pronunciation: pronunciation.trimmingCharacters(in: .whitespaces),
+                        displayName: trimmedName,
+                        pronunciation: initial?.pronunciation ?? "",
                         aliases: parseCommaList(aliases, maximum: 10),
-                        recognitionPhrases: samples
+                        recognitionPhrases: spellings
                     ))
                 }
             }
@@ -187,11 +149,11 @@ struct PersonMemoryEditorView: View {
     var body: some View {
         EditorScaffold(title: initial.map { "Edit \($0.name)" } ?? "Add a person", onBack: onBack) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("People are added only when you enter them here. Their names help local transcription and trigger alerts only if you enable that audience in Speech and names.")
+                Text("People are added only when you enter them here. Their names help local transcription and trigger alerts only if you turn on “People in my context” in Settings.")
                     .font(MaterialType.bodyLarge).foregroundStyle(scheme.onSurfaceVariant)
                 MaterialTextField(label: "Name", text: $name, placeholder: "Maya", limit: 60)
                 MaterialTextField(label: "Relationship", text: $relationship, placeholder: "Sister", limit: 80)
-                MaterialTextField(label: "Pronunciation", text: $pronunciation, placeholder: "My-uh", limit: 80)
+                MaterialTextField(label: "Pronunciation (for you, not the detector)", text: $pronunciation, placeholder: "My-uh", limit: 80)
                 MaterialTextField(label: "Aliases", text: $aliases, placeholder: "May, M", limit: 320)
                 MaterialTextField(label: "Notes", text: $notes, placeholder: "Lives nearby and usually visits on weekends",
                                   supporting: "\(notes.count)/280", minLines: 3, limit: 280)

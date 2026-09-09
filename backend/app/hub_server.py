@@ -21,12 +21,18 @@ from backend.inference.custom_sound_matcher import (
 )
 from backend.inference.enrollment_capture import EnrollmentCaptureController
 from backend.inference.classifier_label_matcher import ClassifierLabelMatcher
+from backend.inference.name_enrollment import (
+    DEFAULT_DURATION_MS as NAME_ENROLLMENT_DURATION_MS,
+    NameEnrollmentController,
+    analyze_name_sample,
+)
 from backend.inference.pipeline import (
     ConfirmedEvent,
     HubInferencePipeline,
     HubInferenceResult,
     SoundClassifier,
 )
+from backend.inference.speech import WHISPER_MODEL_NAMES
 from backend.profiles.defaults import all_profiles, get_profile
 from backend.profiles.engine import (
     AlertCommand,
@@ -56,6 +62,7 @@ class QuietCueHubServer:
         pairing_token: str = "",
         enrollment_capture: EnrollmentCaptureController | None = None,
         samsung_proxy: SamsungInferenceProxy | None = None,
+        name_enrollment: NameEnrollmentController | None = None,
     ) -> None:
         self._pipeline_factory = pipeline_factory
         self._pipeline: HubInferencePipeline | None = None
@@ -68,6 +75,8 @@ class QuietCueHubServer:
         )
         self._pairing_token = pairing_token
         self._enrollment_capture = enrollment_capture or EnrollmentCaptureController()
+        self._name_enrollment = name_enrollment or NameEnrollmentController()
+        self._speech_model_override: str | None = None
         self._control_queues: dict[str, list[dict[str, object]]] = {}
         self._samsung_proxy = samsung_proxy
         self._requested_inference_device = COPILOT_PC
@@ -94,6 +103,37 @@ class QuietCueHubServer:
             "switch_pending": self._requested_inference_device != self._active_inference_device,
             "error": self._inference_error,
         }
+
+    def start_name_enrollment(self, document: dict[str, object]) -> dict[str, object]:
+        name = document.get("name")
+        if not isinstance(name, str):
+            raise ValueError("Name enrollment requires a name string")
+        known = document.get("known_spellings", [])
+        if not isinstance(known, list) or any(not isinstance(item, str) for item in known):
+            raise ValueError("known_spellings must be a list of strings")
+        duration_ms = document.get("duration_ms", NAME_ENROLLMENT_DURATION_MS)
+        if isinstance(duration_ms, bool) or not isinstance(duration_ms, int):
+            raise ValueError("duration_ms must be an integer")
+        pipeline = self._pipeline
+        if pipeline is None:
+            raise ValueError("No live audio yet; connect the iPhone microphone stream first")
+        if pipeline.transcriber is None:
+            raise ValueError("Speech is disabled on the hub; start it without --no-speech to learn spellings")
+        return self._name_enrollment.start(name, known, duration_ms)
+
+    def name_enrollment_status(self) -> dict[str, object]:
+        return self._name_enrollment.status()
+
+    def cancel_name_enrollment(self) -> dict[str, object]:
+        return self._name_enrollment.cancel()
+
+    def apply_speech_model(self, model: str) -> None:
+        """Select the Whisper weights the phone asked for (tiny_en/base_en/small_en)."""
+        model_name = WHISPER_MODEL_NAMES.get(model)
+        if model_name is None:
+            return
+        self._speech_model_override = model_name
+        self.apply_speech_model_name(model_name)
 
     def stop_haptic(self, event_id: str | None = None) -> dict[str, object]:
         acknowledgement = self._state_store.stop_haptic(event_id)
@@ -259,12 +299,24 @@ class QuietCueHubServer:
         async with self._pipeline_lock:
             if self._pipeline is None:
                 self._pipeline = await asyncio.to_thread(self._pipeline_factory)
+                if self._speech_model_override is not None:
+                    self.apply_speech_model_name(self._speech_model_override)
             profile = self._decision_engine.profile
             speech_context = profile.speech_context
             resolved_phrases = speech_context.trigger_phrases(
                 profile.phrase_triggers,
                 phrase_triggers,
             )
+            captured_name_sample = self._name_enrollment.observe(message.payload, sample_rate)
+            if captured_name_sample is not None:
+                asyncio.get_running_loop().run_in_executor(
+                    None,
+                    self._analyze_name_sample,
+                    captured_name_sample,
+                    sample_rate,
+                    speech_context.prompt(),
+                    list(speech_context.hotwords()),
+                )
             inference = await asyncio.to_thread(
                 self._pipeline.process_pcm16,
                 message.payload,
@@ -326,6 +378,47 @@ class QuietCueHubServer:
             if self._pipeline is not None:
                 self._pipeline.reset_stream()
 
+    def apply_speech_model_name(self, model_name: str) -> None:
+        pipeline = self._pipeline
+        transcriber = pipeline.transcriber if pipeline is not None else None
+        if transcriber is not None and hasattr(transcriber, "set_model"):
+            if transcriber.set_model(model_name):
+                LOGGER.info("Speech model switched to %s by the active profile", model_name)
+
+    def _analyze_name_sample(
+        self,
+        pcm: bytes,
+        sample_rate: int,
+        prompt: str,
+        hotwords: list[str],
+    ) -> None:
+        pipeline = self._pipeline
+        transcriber = pipeline.transcriber if pipeline is not None else None
+        if transcriber is None:
+            self._name_enrollment.fail("Speech is disabled on the hub")
+            return
+        try:
+            result = analyze_name_sample(
+                transcriber,
+                pcm,
+                sample_rate,
+                self._name_enrollment.name,
+                self._name_enrollment.known_spellings,
+                prompt,
+                hotwords,
+            )
+        except Exception as exc:  # A failed enrollment must never take down inference.
+            LOGGER.warning("Name enrollment failed: %s", exc)
+            self._name_enrollment.fail(str(exc))
+            return
+        LOGGER.info(
+            "Name enrollment for %r: recognized=%s new_spellings=%d",
+            self._name_enrollment.name,
+            result.get("recognized"),
+            len(result.get("heard", [])),
+        )
+        self._name_enrollment.complete(result)
+
     def _drain_control_commands(self, session_id: str) -> list[dict[str, object]]:
         queue = self._control_queues.get(session_id, [])
         commands = list(queue)
@@ -375,6 +468,9 @@ def _decode_remote_inference(document: dict[str, object]) -> HubInferenceResult:
         speech_pending=bool(document.get("speech_pending", False)),
         speech_inference_ms=_optional_float(document.get("speech_inference_ms")),
         speech_error=_optional_string(document.get("speech_error")),
+        speech_diagnostics=document.get("speech_diagnostics")
+        if isinstance(document.get("speech_diagnostics"), dict)
+        else None,
         inference_ms=float(document.get("inference_ms", 0.0)),
         total_ms=float(document.get("total_ms", 0.0)),
         top_predictions=predictions,
@@ -543,6 +639,7 @@ async def serve(
         custom_matcher.set_prototypes(updated.custom_sounds)
         classifier_label_matcher.set_rules(updated.classifier_label_rules)
         state_store.set_profile(updated)
+        hub.apply_speech_model(updated.speech_context.settings.model.value)
         LOGGER.info(
             "Active profile synchronized: %s (%d rules, %d enrolled sounds, %d label rules, identity=%s, %d people, %d contexts)",
             updated.name,
@@ -568,6 +665,9 @@ async def serve(
         start_enrollment=enrollment_capture.start,
         enrollment_status=enrollment_capture.status,
         cancel_enrollment=enrollment_capture.cancel,
+        start_name_enrollment=hub.start_name_enrollment,
+        name_enrollment_status=hub.name_enrollment_status,
+        cancel_name_enrollment=hub.cancel_name_enrollment,
     )
     audio_server = await asyncio.start_server(hub.handle_client, host, port)
     state_server = await asyncio.start_server(status.handle_client, state_host, state_port)

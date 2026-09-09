@@ -59,9 +59,13 @@ flowchart LR
    profile-sync JSON the hub validates in `backend/profiles/wire_codec.py`.
 4. **Places tab:** Core Location geofences, suggestions, manual-override
    policy, demo place with simulated arrival/departure.
-5. **My context tab:** speech settings, identity, people, manual context,
-   voice checks through the on-device speech recognizer, stored with iOS
-   data protection.
+5. **My context tab:** identity, people, and manual context stored with iOS
+   data protection. Enrolling a name is enough to be alerted on it; the
+   "Listen for my name" button asks the Mac's own Whisper model how it spells
+   the name (`/api/name-enrollment/*`) and keeps only that spelling.
+   **Settings tab:** speech detection on/off, Whisper model (Tiny/Base/Small,
+   applied on the hub through profile sync), match strictness, people-name
+   alerts, global phrases, and privacy-safe speech diagnostics.
 6. **Enroll a sound / Describe a situation** flows (hub enrollment API and the
    local text agent).
 7. **Notifications** with an acknowledge action, background audio mode.
@@ -114,6 +118,19 @@ remembered. Both devices must be on the same Wi-Fi.
 - **Hub address entry is new UI.** The Android app reaches the hub through
   `adb reverse` on localhost; the iPhone needs a field for the Mac's address.
 - **Free Apple ID signing** expires after seven days; rerun from Xcode.
-- **Speech / name detection on the hub** needs `pip install faster-whisper`
-  (not installed on this Mac). The run script disables speech unless it is
-  present.
+- **Speech / name detection on the hub** needs `pip install faster-whisper`.
+  The run script disables speech unless it is present.
+- **Name detection (September 2026 overhaul).** Alerts used to be suppressed by
+  three things: the match score was multiplied by Whisper's sentence
+  log-probability and then held to the 0.60 profile threshold; each 1 s iPhone
+  chunk was transcribed alone; and audio was dropped before Whisper whenever
+  the edge/YAMNet voice gate was closed. Now the event confidence is the match
+  score alone (ASR confidence is only a 0.20 floor against hallucinations),
+  the hub keeps a 6 s rolling buffer and submits a windowed utterance with
+  0.8 s pre-roll after about 450 ms of silence, the prompt is transcript-style
+  (`Rohan. Hey Rohan.`) rather than prose, pronunciation guides are no longer
+  hotwords, and `speech_diagnostics` (window length, match score, ASR
+  confidence, reject reason) rides on every detection result. Measured on this
+  Mac with int8 CPU: tiny.en about 150 ms, base.en about 300 ms, small.en about
+  1 s per 3 s window; beam search added 10-30 % without changing output and
+  word timestamps cost 4-6 s, so both stay off.

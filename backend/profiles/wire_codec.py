@@ -160,7 +160,7 @@ def _decode_speech_context(value: Any) -> SpeechContext:
     settings = SpeechSettings(
         enabled=_optional_bool(settings_document, "enabled", True),
         model=_enum_choice(
-            settings_document.get("model", SpeechModel.TINY_EN.value),
+            settings_document.get("model", SpeechModel.BASE_EN.value),
             SpeechModel,
             "speech_context.settings.model",
         ),
@@ -186,7 +186,7 @@ def _decode_speech_context(value: Any) -> SpeechContext:
             aliases=_bounded_text_list(identity_document.get("aliases", []), 10, 60, "identity aliases"),
             recognition_phrases=_bounded_text_list(
                 identity_document.get("recognition_phrases", []),
-                5,
+                10,
                 100,
                 "recognition phrases",
             ),

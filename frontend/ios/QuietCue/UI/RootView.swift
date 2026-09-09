@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum MainTab: String, CaseIterable {
-    case home, profiles, places, memory
+    case home, profiles, places, memory, settings
 
     var label: String {
         switch self {
@@ -9,6 +9,7 @@ enum MainTab: String, CaseIterable {
         case .profiles: return "Profiles"
         case .places: return "Places"
         case .memory: return "My context"
+        case .settings: return "Settings"
         }
     }
 
@@ -18,6 +19,7 @@ enum MainTab: String, CaseIterable {
         case .profiles: return "slider.horizontal.3"
         case .places: return "mappin"
         case .memory: return "person.crop.circle.fill"
+        case .settings: return "gearshape.fill"
         }
     }
 }
@@ -26,7 +28,6 @@ enum Route: Equatable {
     case profileEditor(AlertProfile)
     case profileAgent
     case soundEnrollment(suggestedName: String)
-    case speechSettings
     case identity
     case person(PersonMemory?)
     case context(ContextMemory?)
@@ -79,11 +80,12 @@ struct RootView: View {
                     SmartPlacesView()
                 case .memory:
                     MemoryBankView(
-                        onEditSpeech: { route = .speechSettings },
                         onEditIdentity: { route = .identity },
                         onEditPerson: { route = .person($0) },
                         onEditContext: { route = .context($0) }
                     )
+                case .settings:
+                    SettingsView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -169,16 +171,6 @@ struct RootView: View {
                 onBack: { self.route = nil },
                 onEnroll: { sound in
                     model.enrollSound(sound)
-                    self.route = nil
-                }
-            )
-        case .speechSettings:
-            SpeechSettingsView(
-                initial: model.memoryBank.speechSettings,
-                identityAvailable: model.memoryBank.identity != nil,
-                onBack: { self.route = nil },
-                onSave: { settings in
-                    model.saveSpeechSettings(settings)
                     self.route = nil
                 }
             )

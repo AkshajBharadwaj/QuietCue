@@ -6,12 +6,24 @@ struct HubStatusError: LocalizedError {
 }
 
 /// Speech-related fields the hub attaches to its latest inference result.
+/// Diagnostics are scores and reasons only; the hub never sends transcripts.
 struct HubSpeechStatus: Equatable {
     var pending: Bool = false
     var error: String? = nil
     var inferenceMs: Double? = nil
     var transcript: String? = nil
     var voiceDetected: Bool = false
+    var lastWindowMs: Int? = nil
+    var lastMatchScore: Double? = nil
+    var lastAsrConfidence: Double? = nil
+    var lastMatched: Bool = false
+    var lastRejectReason: String? = nil
+}
+
+/// Result of asking the Mac's Whisper model how it spells a name.
+struct NameSpellingResult: Equatable {
+    var heard: [String]
+    var recognized: Bool
 }
 
 /// Talks to the hub's status API (`backend/app/status_server.py`), the same
@@ -58,6 +70,36 @@ struct HubStatusClient {
         throw HubStatusError(message: "No live microphone audio reached the enrollment session")
     }
 
+    /// The hub records `durationMs` of the live iPhone stream, transcribes it
+    /// with the same Whisper model the detector uses, and returns only the
+    /// word(s) it produced for the name.
+    func learnNameSpelling(name: String, knownSpellings: [String], durationMs: Int = 4_000) async throws -> NameSpellingResult {
+        _ = try await request(method: "POST", path: "/api/name-enrollment/start", json: [
+            "name": name,
+            "known_spellings": knownSpellings,
+            "duration_ms": durationMs,
+        ])
+        let deadline = Date().addingTimeInterval(Double(durationMs) / 1_000 + 20)
+        while Date() < deadline {
+            let status = try await request(method: "GET", path: "/api/name-enrollment/status")
+            switch status["state"] as? String {
+            case "complete":
+                return NameSpellingResult(
+                    heard: status["heard"] as? [String] ?? [],
+                    recognized: status["recognized"] as? Bool == true
+                )
+            case "error":
+                throw HubStatusError(message: status["error"] as? String ?? "The hub could not learn the name")
+            case "recording", "processing":
+                try await Task.sleep(for: .milliseconds(250))
+            default:
+                throw HubStatusError(message: "The QuietCue hub did not start listening")
+            }
+        }
+        _ = try? await request(method: "POST", path: "/api/name-enrollment/cancel")
+        throw HubStatusError(message: "No live microphone audio reached the hub; check that the iPhone is streaming")
+    }
+
     // MARK: Parsing
 
     static func parseState(_ json: [String: Any]) -> RuntimeState {
@@ -80,12 +122,18 @@ struct HubStatusClient {
 
     static func parseSpeech(_ json: [String: Any]) -> HubSpeechStatus {
         guard let result = json["latest_result"] as? [String: Any] else { return HubSpeechStatus() }
+        let diagnostics = result["speech_diagnostics"] as? [String: Any]
         return HubSpeechStatus(
             pending: result["speech_pending"] as? Bool == true,
             error: (result["speech_error"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             inferenceMs: result["speech_inference_ms"] as? Double,
             transcript: (result["transcript"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-            voiceDetected: result["voice_detected"] as? Bool == true
+            voiceDetected: result["voice_detected"] as? Bool == true,
+            lastWindowMs: diagnostics?["window_ms"] as? Int,
+            lastMatchScore: diagnostics?["match_score"] as? Double,
+            lastAsrConfidence: diagnostics?["asr_confidence"] as? Double,
+            lastMatched: diagnostics?["matched"] as? Bool == true,
+            lastRejectReason: (diagnostics?["reject_reason"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 

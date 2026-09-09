@@ -46,6 +46,7 @@ class HubInferenceResult:
     total_ms: float
     top_predictions: tuple[dict[str, object], ...]
     inference_source: str
+    speech_diagnostics: dict[str, object] | None = None
 
     def to_wire(self) -> dict[str, object]:
         return {
@@ -58,6 +59,8 @@ class HubInferenceResult:
             "speech_pending": self.speech_pending,
             "speech_inference_ms": self.speech_inference_ms,
             "speech_error": self.speech_error,
+            # Match score, ASR confidence, window length and rejection reason only.
+            "speech_diagnostics": self.speech_diagnostics,
             "inference_ms": self.inference_ms,
             "total_ms": self.total_ms,
             "top_predictions": list(self.top_predictions),
@@ -74,6 +77,7 @@ class HubInferencePipeline:
         transcriber: SpeechTranscriber | None = None,
     ) -> None:
         self.classifier = classifier
+        self.transcriber = transcriber
         self.speech_recognizer = BufferedSpeechRecognizer(transcriber) if transcriber else None
 
     def close(self) -> None:
@@ -117,6 +121,7 @@ class HubInferencePipeline:
         speech_pending = False
         speech_inference_ms = None
         speech_error = None
+        speech_diagnostics = None
         events = [_confirmed_event(event) for event in mapping.events]
         if self.speech_recognizer is not None and speech_enabled:
             recognition, speech_pending = self.speech_recognizer.update(
@@ -131,6 +136,8 @@ class HubInferencePipeline:
             if recognition is not None:
                 speech_inference_ms = recognition.inference_ms
                 speech_error = recognition.error
+                if recognition.diagnostics is not None:
+                    speech_diagnostics = recognition.diagnostics.to_wire()
                 if recognition.transcript is not None:
                     transcript = recognition.transcript.text
                 phrase_match = recognition.phrase_match
@@ -168,6 +175,7 @@ class HubInferencePipeline:
             total_ms=round(total_ms, 2),
             top_predictions=top_predictions,
             inference_source="connected_hub",
+            speech_diagnostics=speech_diagnostics,
         )
 
 

@@ -18,6 +18,9 @@ class StatusHttpServer:
         start_enrollment: Callable[[int], dict[str, Any]] | None = None,
         enrollment_status: Callable[[], dict[str, Any]] | None = None,
         cancel_enrollment: Callable[[], dict[str, Any]] | None = None,
+        start_name_enrollment: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        name_enrollment_status: Callable[[], dict[str, Any]] | None = None,
+        cancel_name_enrollment: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self._snapshot = snapshot
         self._update_profile = update_profile
@@ -26,6 +29,9 @@ class StatusHttpServer:
         self._start_enrollment = start_enrollment
         self._enrollment_status = enrollment_status
         self._cancel_enrollment = cancel_enrollment
+        self._start_name_enrollment = start_name_enrollment
+        self._name_enrollment_status = name_enrollment_status
+        self._cancel_name_enrollment = cancel_name_enrollment
 
     async def handle_client(
         self,
@@ -114,6 +120,31 @@ class StatusHttpServer:
                 and self._cancel_enrollment is not None
             ):
                 await self._respond(writer, 200, self._cancel_enrollment())
+            elif (
+                method == "GET"
+                and path == "/api/name-enrollment/status"
+                and self._name_enrollment_status is not None
+            ):
+                await self._respond(writer, 200, self._name_enrollment_status())
+            elif (
+                method == "POST"
+                and path == "/api/name-enrollment/start"
+                and self._start_name_enrollment is not None
+            ):
+                content_length = _content_length(header_lines[1:])
+                if content_length < 2 or content_length > 8 * 1024:
+                    raise ValueError("Name enrollment command has an invalid size")
+                body = await reader.readexactly(content_length)
+                decoded = json.loads(body)
+                if not isinstance(decoded, dict):
+                    raise ValueError("Name enrollment command must be an object")
+                await self._respond(writer, 200, self._start_name_enrollment(decoded))
+            elif (
+                method == "POST"
+                and path == "/api/name-enrollment/cancel"
+                and self._cancel_name_enrollment is not None
+            ):
+                await self._respond(writer, 200, self._cancel_name_enrollment())
             elif method not in {"GET", "PUT", "POST"}:
                 await self._respond(writer, 405, {"error": "method_not_allowed"})
             else:

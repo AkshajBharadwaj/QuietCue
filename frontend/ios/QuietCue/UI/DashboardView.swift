@@ -154,9 +154,16 @@ struct DashboardView: View {
 
     private var speechStatus: String {
         let speech = model.hubSpeech
+        if !model.memoryBank.speechSettings.enabled { return "Off in Settings" }
         if let error = speech.error { return error }
         if speech.pending { return "Transcribing locally…" }
-        if let ms = speech.inferenceMs { return "Model ready • last decode \(Int(ms)) ms" }
+        if let ms = speech.inferenceMs {
+            var line = "Model ready • last decode \(Int(ms)) ms"
+            if speech.lastMatched, let score = speech.lastMatchScore {
+                line += " • name matched \(Int((score * 100).rounded()))%"
+            }
+            return line
+        }
         return "Loads only when an enabled profile hears speech"
     }
 

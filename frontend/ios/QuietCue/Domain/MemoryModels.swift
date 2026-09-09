@@ -3,30 +3,50 @@ import Foundation
 enum SpeechModel: String, CaseIterable, Codable {
     case tinyEn = "tiny_en"
     case baseEn = "base_en"
+    case smallEn = "small_en"
 
     var displayName: String {
         switch self {
-        case .tinyEn: return "Tiny English"
-        case .baseEn: return "Base English"
+        case .tinyEn: return "Tiny"
+        case .baseEn: return "Base"
+        case .smallEn: return "Small"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .tinyEn: return "Fastest (about 150 ms per window); misses more unusual names."
+        case .baseEn: return "Recommended. About 300 ms per window on the Mac."
+        case .smallEn: return "Most accurate; about 1 s per window, so alerts arrive later."
         }
     }
 }
 
+/// Global speech controls, edited on the Settings tab. Your own name is always
+/// listened for once it is enrolled; there is no separate switch for it.
 struct SpeechSettings: Codable, Equatable, Hashable {
     var enabled: Bool = true
-    var model: SpeechModel = .tinyEn
+    var model: SpeechModel = .baseEn
     var sensitivity: Float = 0.6
-    var listenForIdentity: Bool = true
     var listenForPeople: Bool = false
     var globalPhrases: [String] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, model, sensitivity, listenForPeople, globalPhrases
+    }
 }
 
 struct UserIdentity: Codable, Equatable, Hashable {
     var displayName: String
+    /// Kept for older stored banks; no longer edited or sent as a hotword.
     var pronunciation: String = ""
     var aliases: [String] = []
+    /// Spellings the Mac's Whisper model produced for the name during
+    /// enrollment ("Rowan" for Rohan). Matched exactly like nicknames.
     var recognitionPhrases: [String] = []
     var updatedAtEpochMs: Int64 = nowEpochMs()
+
+    static let maxLearnedSpellings = 10
 }
 
 struct PersonMemory: Codable, Equatable, Hashable, Identifiable {
@@ -67,10 +87,10 @@ enum MemoryBankValidator {
             let name = identity.displayName.trimmingCharacters(in: .whitespaces)
             if name.isEmpty || name.count > 60 { errors.append("Your name must be between 1 and 60 characters.") }
             if identity.pronunciation.count > 80 { errors.append("Pronunciation must be 80 characters or fewer.") }
-            if let error = validateTextList(identity.aliases, maximumItems: 10, maximumLength: 60, label: "identity aliases") {
+            if let error = validateTextList(identity.aliases, maximumItems: 10, maximumLength: 60, label: "nicknames") {
                 errors.append(error)
             }
-            if let error = validateTextList(identity.recognitionPhrases, maximumItems: 5, maximumLength: 100, label: "recognition samples") {
+            if let error = validateTextList(identity.recognitionPhrases, maximumItems: UserIdentity.maxLearnedSpellings, maximumLength: 60, label: "learned spellings") {
                 errors.append(error)
             }
         }

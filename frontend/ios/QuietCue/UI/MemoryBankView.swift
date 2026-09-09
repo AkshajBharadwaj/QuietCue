@@ -4,7 +4,6 @@ import SwiftUI
 struct MemoryBankView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scheme) private var scheme
-    var onEditSpeech: () -> Void
     var onEditIdentity: () -> Void
     var onEditPerson: (PersonMemory?) -> Void
     var onEditContext: (ContextMemory?) -> Void
@@ -32,22 +31,6 @@ struct MemoryBankView: View {
                                 Text("This bank is encrypted on your phone. QuietCue never creates memories from background conversations, and enrollment audio is not saved.")
                                     .font(MaterialType.bodyLarge)
                             }
-                        }
-                        .padding(16)
-                    }
-
-                    SectionTitle("Speech and names")
-                    MaterialCard(container: scheme.surfaceContainer) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "person.wave.2").font(.system(size: 22)).foregroundStyle(scheme.onSurfaceVariant)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(bank.speechSettings.enabled ? "Local speech detection on" : "Local speech detection off")
-                                    .font(MaterialType.titleMedium)
-                                Text("\(bank.speechSettings.model.displayName) • \(Int(bank.speechSettings.sensitivity * 100))% sensitivity • \(bank.speechSettings.globalPhrases.count) global phrases")
-                                    .font(MaterialType.bodyLarge).foregroundStyle(scheme.onSurfaceVariant)
-                            }
-                            Spacer(minLength: 0)
-                            IconButtonM(systemName: "pencil", label: "Edit speech settings", action: onEditSpeech)
                         }
                         .padding(16)
                     }
@@ -128,7 +111,7 @@ struct MemoryBankView: View {
             }
             if confirmIdentityDelete {
                 DeleteMemoryDialog(title: "Delete name enrollment?",
-                                   detail: "Your name, pronunciation, aliases, and voice-check text will be removed from name detection.",
+                                   detail: "Your name, nicknames, and learned spellings will be removed from name detection.",
                                    onDismiss: { confirmIdentityDelete = false }) {
                     model.deleteIdentity()
                     confirmIdentityDelete = false
@@ -136,7 +119,7 @@ struct MemoryBankView: View {
             }
             if confirmClear {
                 DeleteMemoryDialog(title: "Delete the entire memory bank?",
-                                   detail: "Your speech settings, name enrollment, people, and manual context will be permanently removed. Profiles and enrolled sounds are not affected.",
+                                   detail: "Your name enrollment, people, manual context, and speech settings will be permanently removed. Profiles and enrolled sounds are not affected.",
                                    onDismiss: { confirmClear = false }) {
                     model.clearMemoryBank()
                     confirmClear = false
@@ -146,9 +129,13 @@ struct MemoryBankView: View {
     }
 
     private func identitySubtitle(_ identity: UserIdentity?) -> String {
-        guard let identity else { return "Add your name, pronunciation, aliases, and optional voice checks." }
-        if !identity.pronunciation.isEmpty { return "Pronounced \(identity.pronunciation)" }
-        return "\(identity.aliases.count) aliases • \(identity.recognitionPhrases.count) voice checks"
+        guard let identity else { return "Add your name so QuietCue alerts you when someone calls it." }
+        var parts = ["Alerts on"]
+        if !identity.aliases.isEmpty { parts.append("\(identity.aliases.count) nicknames") }
+        parts.append(identity.recognitionPhrases.isEmpty
+            ? "no learned spellings yet"
+            : "\(identity.recognitionPhrases.count) learned spellings")
+        return parts.joined(separator: " • ")
     }
 }
 
