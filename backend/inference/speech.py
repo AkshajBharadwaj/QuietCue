@@ -23,7 +23,7 @@ import time
 import unicodedata
 from array import array
 from collections import deque
-from concurrent.futures import Executor, Future, ThreadPoolExecutor
+from concurrent.futures import Executor, Future, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass
 from typing import Protocol
 
@@ -200,6 +200,11 @@ class FasterWhisperTranscriber:
 
 
 ASR_CONFIDENCE_FLOOR = 0.20
+# Whisper echoes prompt names onto near-silent audio as a short transcript or
+# a repeated name ("I'm Rohan Rohan.", confidence ~0.4). Genuine names alone
+# measured 0.64-0.92 on tiny/base/small, so those shapes need more confidence.
+ECHO_CONFIDENCE_FLOOR = 0.50
+ECHO_MAX_TOKENS = 3
 
 
 def evaluate_phrase_match(
@@ -207,11 +212,13 @@ def evaluate_phrase_match(
     phrases: list[str],
     sensitivity: float = 0.6,
     asr_floor: float = ASR_CONFIDENCE_FLOOR,
+    echo_floor: float = ECHO_CONFIDENCE_FLOOR,
 ) -> PhraseEvaluation:
     """Fuzzily match bounded token windows without exposing transcript text.
 
-    The returned confidence is the match score. ASR confidence (word-level when
-    the transcriber provides it) is only a floor against hallucinated text.
+    The returned confidence is the match score. ASR confidence is only a floor
+    against hallucinated text: a low one everywhere, a higher one for the
+    transcript shapes a prompt echo produces.
     """
     if not 0.0 <= sensitivity <= 1.0:
         raise ValueError("Speech sensitivity must be between zero and one")
@@ -222,6 +229,7 @@ def evaluate_phrase_match(
         reverse=True,
     )
     best: tuple[float, int, str, float] | None = None
+    hits = 0
     for normalized_phrase, original_phrase in candidates:
         if not normalized_phrase:
             continue
@@ -230,6 +238,8 @@ def evaluate_phrase_match(
             for start in range(0, len(tokens) - window_size + 1):
                 window = " ".join(tokens[start : start + window_size])
                 score = _phrase_similarity(normalized_phrase, window)
+                if window_size == len(phrase_tokens) and score >= sensitivity:
+                    hits += 1
                 window_confidence = sum(token_confidences[start : start + window_size]) / window_size
                 candidate = (score, len(normalized_phrase), original_phrase, window_confidence)
                 if best is None or candidate[:2] > best[:2]:
@@ -245,6 +255,10 @@ def evaluate_phrase_match(
     if asr_confidence < asr_floor:
         LOGGER.debug("Rejected %r: ASR confidence %.3f below floor", phrase, asr_confidence)
         return PhraseEvaluation(None, phrase, round(score, 4), round(asr_confidence, 4), "asr_confidence_floor")
+    echo_shaped = len(tokens) <= ECHO_MAX_TOKENS or hits > 1
+    if echo_shaped and asr_confidence < echo_floor:
+        LOGGER.debug("Rejected %r: looks like a prompt echo (%d tokens, %d hits, %.3f)", phrase, len(tokens), hits, asr_confidence)
+        return PhraseEvaluation(None, phrase, round(score, 4), round(asr_confidence, 4), "likely_prompt_echo")
     match = PhraseMatch(
         phrase=phrase,
         transcript=transcript.text,
@@ -320,6 +334,9 @@ class BufferedSpeechRecognizer:
     SILENCE_MARGIN_DB = 6.0
     MIN_ACTIVITY_MS = 200
     MIN_NOISE_FLOOR_DBFS = -75.0
+    MAX_NOISE_FLOOR_DBFS = -35.0
+    MIN_FLOOR_HISTORY_FRAMES = 2_000 // FRAME_MS
+    TAIL_PADDING_MS = 400
 
     def __init__(
         self,
@@ -327,21 +344,25 @@ class BufferedSpeechRecognizer:
         *,
         min_audio_ms: int = 1_000,
         end_of_utterance_ms: int = 450,
-        max_audio_ms: int = 4_000,
+        max_audio_ms: int = 2_500,
         overlap_ms: int = 800,
         buffer_ms: int = 6_000,
+        result_wait_ms: int = 600,
         executor: Executor | None = None,
     ) -> None:
         if not 200 <= end_of_utterance_ms <= min_audio_ms <= max_audio_ms <= buffer_ms:
             raise ValueError("Speech buffer durations are inconsistent")
         if not 0 <= overlap_ms < min_audio_ms:
             raise ValueError("Speech overlap must be shorter than the minimum window")
+        if result_wait_ms < 0:
+            raise ValueError("Speech result wait must not be negative")
         self.transcriber = transcriber
         self.min_audio_ms = min_audio_ms
         self.end_of_utterance_ms = end_of_utterance_ms
         self.max_audio_ms = max_audio_ms
         self.overlap_ms = overlap_ms
         self.buffer_ms = buffer_ms
+        self.result_wait_ms = result_wait_ms
         self._buffer = bytearray()
         self._consumed = 0
         self._levels: deque[float] = deque(maxlen=buffer_ms // self.FRAME_MS)
@@ -373,8 +394,18 @@ class BufferedSpeechRecognizer:
         levels = _frame_levels_dbfs(pcm, sample_rate, self.FRAME_MS)
         self._levels.extend(levels)
         # Real microphones idle around -60 dBFS; clamp so digital silence does
-        # not turn every faint hum into "speech".
-        noise_floor = max(_percentile(self._levels, 0.10), self.MIN_NOISE_FLOOR_DBFS)
+        # not turn every faint hum into "speech". Until ~2 s of history exists
+        # the percentile would just be the current chunk (speech included), so
+        # start from the clamp instead.
+        if len(self._levels) >= self.MIN_FLOOR_HISTORY_FRAMES:
+            # Also cap it: a "floor" above -35 dBFS is sustained speech or
+            # alarm, not the room, and would silence its own detection.
+            noise_floor = min(
+                self.MAX_NOISE_FLOOR_DBFS,
+                max(_percentile(self._levels, 0.10), self.MIN_NOISE_FLOOR_DBFS),
+            )
+        else:
+            noise_floor = self.MIN_NOISE_FLOOR_DBFS
         active_ms = sum(1 for level in levels if level >= noise_floor + self.ACTIVITY_MARGIN_DB) * self.FRAME_MS
         trailing_silence_ms = 0
         for level in reversed(levels):
@@ -395,7 +426,12 @@ class BufferedSpeechRecognizer:
         should_submit = self._voice_seen and (utterance_ended or unsent_ms >= self.max_audio_ms)
         if should_submit and phrase_triggers:
             if self._future is None:
-                self._submit(sample_rate, phrase_triggers, prompt, hotwords or [], sensitivity)
+                self._submit(sample_rate, phrase_triggers, prompt, hotwords or [], sensitivity, noise_floor)
+                if completed is None and self._future is not None:
+                    # A short decode (base.en: ~300 ms) can finish inside this
+                    # chunk cycle; waiting briefly delivers the alert a full
+                    # chunk earlier. The phone buffers its next chunk meanwhile.
+                    completed = self._take_completed(timeout_ms=self.result_wait_ms)
             # Otherwise the worker is busy; the unsent audio stays queued for the next update.
         elif not self._voice_seen or not phrase_triggers:
             # Silence only (or nothing to listen for): keep the buffer as pre-roll
@@ -426,14 +462,38 @@ class BufferedSpeechRecognizer:
         prompt: str,
         hotwords: list[str],
         sensitivity: float,
+        noise_floor: float,
     ) -> None:
         total = len(self._buffer)
         overlap_bytes = _bytes_for_ms(sample_rate, self.overlap_ms)
-        start = max(0, self._consumed - overlap_bytes, total - _bytes_for_ms(sample_rate, self.max_audio_ms))
-        start = max(0, min(start, total - _bytes_for_ms(sample_rate, self.min_audio_ms)))
-        audio = bytes(self._buffer[start:])
-        self._consumed = total
-        self._voice_seen = False
+        # Take the *oldest* unsent audio first (with pre-roll). If more than one
+        # window is queued, the remainder stays unsent for the next update so a
+        # name at the start of a long sentence is never cut off.
+        start = max(0, self._consumed - overlap_bytes)
+        end = min(total, start + _bytes_for_ms(sample_rate, self.max_audio_ms))
+        minimum_bytes = _bytes_for_ms(sample_rate, self.min_audio_ms)
+        if end - start < minimum_bytes:
+            start = max(0, end - minimum_bytes)
+        consumed_before = self._consumed
+        self._consumed = end
+        self._voice_seen = end < total
+
+        # Whisper hallucinates prompt names onto silence, so cut the window
+        # shortly after the last speech-like frame and skip windows whose new
+        # (non-overlap) audio carries no activity at all.
+        audio = bytes(self._buffer[start:end])
+        levels = _frame_levels_dbfs(audio, sample_rate, self.FRAME_MS)
+        frame_bytes = _bytes_for_ms(sample_rate, self.FRAME_MS)
+        active_threshold = noise_floor + self.SILENCE_MARGIN_DB
+        last_active = max((index for index, level in enumerate(levels) if level >= active_threshold), default=-1)
+        new_audio_start_frame = max(0, (consumed_before - start) // frame_bytes)
+        new_active_ms = sum(
+            self.FRAME_MS for level in levels[new_audio_start_frame:] if level >= active_threshold
+        )
+        if last_active < 0 or new_active_ms < self.MIN_ACTIVITY_MS // 2:
+            return
+        cut = min(len(audio), max(minimum_bytes, (last_active + 1) * frame_bytes + _bytes_for_ms(sample_rate, self.TAIL_PADDING_MS)))
+        audio = audio[:cut]
         self._future = self._executor.submit(
             _recognize,
             self.transcriber,
@@ -445,10 +505,16 @@ class BufferedSpeechRecognizer:
             sensitivity,
         )
 
-    def _take_completed(self) -> SpeechRecognition | None:
+    def _take_completed(self, timeout_ms: int = 0) -> SpeechRecognition | None:
         future = self._future
-        if future is None or not future.done():
+        if future is None:
             return None
+        if not future.done():
+            if timeout_ms <= 0:
+                return None
+            wait([future], timeout=timeout_ms / 1_000)
+            if not future.done():
+                return None
         self._future = None
         try:
             return future.result()

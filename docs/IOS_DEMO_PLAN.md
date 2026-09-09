@@ -126,8 +126,13 @@ remembered. Both devices must be on the same Wi-Fi.
   chunk was transcribed alone; and audio was dropped before Whisper whenever
   the edge/YAMNet voice gate was closed. Now the event confidence is the match
   score alone (ASR confidence is only a 0.20 floor against hallucinations),
-  the hub keeps a 6 s rolling buffer and submits a windowed utterance with
-  0.8 s pre-roll after about 450 ms of silence, the prompt is transcript-style
+  the hub keeps a 6 s rolling buffer and submits a windowed utterance (2.5 s
+  max, oldest audio first) with 0.8 s pre-roll after about 450 ms of silence,
+  trims trailing silence out of the window, waits up to 600 ms for the decode
+  so the alert lands in the same chunk cycle, and rejects short or repeated
+  name transcripts below 0.5 confidence as Whisper prompt echoes ("I'm Rohan
+  Rohan." on a silent tail was measured at 0.38); name_called cooldown is 5 s
+  so consecutive calls both register; the prompt is transcript-style
   (`Rohan. Hey Rohan.`) rather than prose, pronunciation guides are no longer
   hotwords, and `speech_diagnostics` (window length, match score, ASR
   confidence, reject reason) rides on every detection result. Measured on this

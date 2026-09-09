@@ -61,8 +61,14 @@ enum ProfileDefaults {
             hapticPattern: sound.defaultHapticPattern,
             hapticStrength: sound.defaultHapticStrength,
             requiresAcknowledgement: sound.defaultRequiresAcknowledgement,
-            cooldownSeconds: sound.defaultPriority == .emergency ? 10 : 20
+            cooldownSeconds: defaultCooldownSeconds(soundId: sound.id, emergency: sound.defaultPriority == .emergency)
         )
+    }
+
+    /// Someone calling your name twice in a row should register twice.
+    static func defaultCooldownSeconds(soundId: String, emergency: Bool) -> Int {
+        if soundId == SoundType.nameCalled.id { return 5 }
+        return emergency ? 10 : 20
     }
 
     static func fallbackRule(soundId: String) -> SoundRule {
@@ -189,7 +195,7 @@ enum ProfileDefaults {
                 rule.hapticPattern = critical ? .urgentRepeat : .longPulse
                 rule.hapticStrength = .strong
                 rule.requiresAcknowledgement = critical
-                rule.cooldownSeconds = critical ? 5 : 20
+                rule.cooldownSeconds = critical || sound == .nameCalled ? 5 : 20
                 return rule
             }
         )
@@ -220,7 +226,7 @@ enum ProfileDefaults {
             hapticPattern: emergency ? .urgentRepeat : .longPulse,
             hapticStrength: emergency ? .strong : .standard,
             requiresAcknowledgement: emergency,
-            cooldownSeconds: emergency ? 10 : 20
+            cooldownSeconds: defaultCooldownSeconds(soundId: sound.id, emergency: emergency)
         )
     }
 }

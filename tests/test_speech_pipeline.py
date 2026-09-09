@@ -95,14 +95,26 @@ class PhraseMatchingTest(unittest.TestCase):
         self.assertIsNone(find_phrase_match(Transcript("Roan"), ["Rohan"], sensitivity=0.85))
 
     def test_low_asr_confidence_is_only_a_floor_against_hallucination(self) -> None:
-        exact_but_noisy = find_phrase_match(Transcript("Rohan", 0.45), ["Rohan"])
+        exact_but_noisy = find_phrase_match(Transcript("Rohan come over here please", 0.45), ["Rohan"])
         self.assertIsNotNone(exact_but_noisy)
         self.assertEqual(exact_but_noisy.confidence, 1.0)
 
-        evaluation = evaluate_phrase_match(Transcript("Rohan", 0.1), ["Rohan"])
+        evaluation = evaluate_phrase_match(Transcript("Rohan come over here please", 0.1), ["Rohan"])
         self.assertIsNone(evaluation.match)
         self.assertEqual(evaluation.reject_reason, "asr_confidence_floor")
         self.assertEqual(evaluation.best_score, 1.0)
+
+    def test_prompt_echo_on_silence_is_rejected(self) -> None:
+        """Whisper produced "I'm Rohan Rohan." at 0.38 for a sentence tail plus silence."""
+        for text in ("I'm Rohan Rohan.", "Rohan.", "Hey Rohan"):
+            with self.subTest(text=text):
+                evaluation = evaluate_phrase_match(Transcript(text, 0.38), ["Rohan"])
+                self.assertIsNone(evaluation.match)
+                self.assertEqual(evaluation.reject_reason, "likely_prompt_echo")
+        # The same shapes at the confidence real speech measured still match.
+        self.assertIsNotNone(find_phrase_match(Transcript("Rohan.", 0.64), ["Rohan"]))
+        # A name inside a longer sentence only needs the low floor.
+        self.assertIsNotNone(find_phrase_match(Transcript("Rohan can you come over here", 0.38), ["Rohan"]))
 
     def test_evaluation_reports_rejection_reason_without_transcript(self) -> None:
         evaluation = evaluate_phrase_match(Transcript("Ryan come here"), ["Rohan"])
@@ -126,14 +138,46 @@ class BufferedRecognizerTest(unittest.TestCase):
         first, pending = recognizer.update(one_second_pcm, 16_000, True, ["Akshaj"])
         completed, still_pending = recognizer.update(_silence(500), 16_000, False, ["Akshaj"])
 
-        self.assertIsNone(first)
-        self.assertTrue(pending)
+        self.assertIsNone(first, "speech is still going; nothing to decode yet")
+        self.assertFalse(pending)
+        self.assertIsNotNone(completed, "a fast decode is delivered in the same chunk cycle it was submitted")
         self.assertFalse(still_pending)
-        self.assertIsNotNone(completed)
         self.assertEqual(completed.phrase_match.phrase, "Akshaj")
         self.assertEqual(completed.diagnostics.reject_reason, None)
         self.assertTrue(completed.diagnostics.matched)
         self.assertEqual(transcriber.calls, 1)
+
+    def test_slow_decode_is_collected_on_a_later_update(self) -> None:
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        release = threading.Event()
+
+        class SlowTranscriber(_FixedTranscriber):
+            def transcribe_pcm16(self, pcm, sample_rate, prompt="", hotwords=None):
+                release.wait(timeout=5)
+                return super().transcribe_pcm16(pcm, sample_rate, prompt, hotwords)
+
+        transcriber = SlowTranscriber("Akshaj")
+        executor = ThreadPoolExecutor(max_workers=1)
+        recognizer = BufferedSpeechRecognizer(transcriber, result_wait_ms=50, executor=executor)
+        try:
+            recognizer.update(_tone(1_000), 16_000, True, ["Akshaj"])
+            first, pending = recognizer.update(_silence(1_000), 16_000, False, ["Akshaj"])
+            self.assertIsNone(first)
+            self.assertTrue(pending, "the worker is still busy after the short wait")
+            release.set()
+            import time
+
+            for _ in range(50):
+                completed, _ = recognizer.update(_silence(1_000), 16_000, False, ["Akshaj"])
+                if completed is not None:
+                    break
+                time.sleep(0.02)
+            self.assertIsNotNone(completed)
+            self.assertEqual(completed.phrase_match.phrase, "Akshaj")
+        finally:
+            executor.shutdown(wait=False)
 
     def test_audio_before_the_voice_gate_opens_is_kept_as_pre_roll(self) -> None:
         """A quiet 'Ro-' the gate missed must still reach Whisper with the '-han'."""
@@ -144,10 +188,8 @@ class BufferedRecognizerTest(unittest.TestCase):
         recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
         recognizer.update(quiet_speech, 16_000, False, ["Rohan"])
         recognizer.update(_tone(1_000), 16_000, True, ["Rohan"])
-        _, pending = recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
         completed, _ = recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
 
-        self.assertTrue(pending)
         self.assertIsNotNone(completed)
         self.assertEqual(transcriber.calls, 1)
         submitted_ms = len(transcriber.received[0]) // 2 * 1_000 // 16_000
@@ -160,23 +202,51 @@ class BufferedRecognizerTest(unittest.TestCase):
         for _ in range(3):
             recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
         recognizer.update(_tone(1_000), 16_000, False, ["Rohan"])
-        _, pending = recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
         completed, _ = recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
 
-        self.assertTrue(pending)
         self.assertEqual(transcriber.calls, 1)
         self.assertIsNotNone(completed)
 
     def test_long_utterance_is_split_at_the_maximum_window(self) -> None:
         transcriber = _FixedTranscriber("Rohan")
-        recognizer = BufferedSpeechRecognizer(transcriber, executor=_InlineExecutor(), max_audio_ms=3_000)
+        recognizer = BufferedSpeechRecognizer(transcriber, executor=_InlineExecutor())
 
         for _ in range(6):
             recognizer.update(_tone(1_000), 16_000, True, ["Rohan"])
 
-        self.assertGreaterEqual(transcriber.calls, 2)
+        self.assertGreaterEqual(transcriber.calls, 2, "continuous talking is windowed, not held until it stops")
         for window in transcriber.received:
-            self.assertLessEqual(len(window) // 2 // 16, 3_000)
+            self.assertLessEqual(len(window) // 2 // 16, 2_500)
+
+    def test_name_at_the_start_of_a_long_sentence_is_not_cut_off(self) -> None:
+        """Queued audio beyond one window is sent oldest-first, not dropped."""
+        transcriber = _FixedTranscriber("Rohan")
+        recognizer = BufferedSpeechRecognizer(transcriber, executor=_InlineExecutor())
+
+        for _ in range(3):
+            recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
+        for _ in range(3):
+            recognizer.update(_tone(1_000), 16_000, True, ["Rohan"])
+        recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
+        recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
+
+        covered = sum(len(window) for window in transcriber.received) // 2 // 16
+        self.assertGreaterEqual(covered, 3_000, "the three seconds of speech must all be transcribed")
+        self.assertGreaterEqual(transcriber.calls, 2)
+
+    def test_trailing_silence_is_trimmed_from_the_window(self) -> None:
+        transcriber = _FixedTranscriber("Rohan")
+        recognizer = BufferedSpeechRecognizer(transcriber, executor=_InlineExecutor())
+
+        for _ in range(3):
+            recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
+        recognizer.update(_tone(500) + _silence(500), 16_000, True, ["Rohan"])
+        recognizer.update(_silence(1_000), 16_000, False, ["Rohan"])
+
+        self.assertEqual(transcriber.calls, 1)
+        window_ms = len(transcriber.received[0]) // 2 // 16
+        self.assertLessEqual(window_ms, 1_800, "the second of pure silence must not be handed to Whisper")
+        self.assertGreaterEqual(window_ms, 1_000)
 
     def test_silence_never_reaches_the_transcriber(self) -> None:
         transcriber = _FixedTranscriber("nothing")
@@ -204,7 +274,7 @@ class BufferedRecognizerTest(unittest.TestCase):
             "Akshaj. Hey Akshaj.",
             ["Akshaj", "Maya"],
         )
-        recognizer.update(pcm[:16_000], 16_000, False, ["Akshaj"])
+        recognizer.update(_silence(500), 16_000, False, ["Akshaj"], "Akshaj. Hey Akshaj.", ["Akshaj", "Maya"])
 
         self.assertEqual(transcriber.prompt, "Akshaj. Hey Akshaj.")
         self.assertEqual(transcriber.hotwords, ["Akshaj", "Maya"])
@@ -228,7 +298,7 @@ class BufferedRecognizerTest(unittest.TestCase):
         pcm = b"\x00\x01" * 16_000
 
         recognizer.update(pcm, 16_000, True, ["Akshaj"])
-        completed, _ = recognizer.update(pcm[:16_000], 16_000, False, ["Akshaj"])
+        completed, _ = recognizer.update(_silence(500), 16_000, False, ["Akshaj"])
 
         self.assertEqual(completed.error, "model unavailable")
 

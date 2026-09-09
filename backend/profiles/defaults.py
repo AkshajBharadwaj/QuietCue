@@ -107,7 +107,7 @@ def _emergency() -> AlertProfile:
             pattern="urgent_repeat" if event in critical else "long_pulse",
             strength="strong",
             requires_ack=event in critical,
-            cooldown_seconds=5 if event in critical else 20,
+            cooldown_seconds=5 if event in critical or event == "name_called" else 20,
         )
         for event in EVENTS
     )
@@ -157,5 +157,12 @@ def _base_rule(event: str) -> SoundRule:
         pattern="urgent_repeat" if emergency else "long_pulse",
         strength="strong" if emergency else "standard",
         requires_ack=emergency,
-        cooldown_seconds=10 if emergency else 20,
+        cooldown_seconds=_default_cooldown_seconds(event, emergency),
     )
+
+
+def _default_cooldown_seconds(event: str, emergency: bool) -> int:
+    # Someone calling your name twice in a row should register twice.
+    if event == "name_called":
+        return 5
+    return 10 if emergency else 20
