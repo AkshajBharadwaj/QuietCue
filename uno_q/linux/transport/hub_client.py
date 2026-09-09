@@ -345,7 +345,12 @@ def _parse_args() -> argparse.Namespace:
         help="Hub pairing token; defaults to the QUIETCUE_PAIRING_TOKEN environment variable",
     )
     parser.add_argument("--phrase", action="append", default=[])
-    parser.add_argument("--chunk-ms", type=int, default=500)
+    parser.add_argument(
+        "--chunk-ms",
+        type=int,
+        default=1_000,
+        help="Chunk length; one full 0.96 s YAMNet patch per chunk avoids zero-padding on the hub",
+    )
     parser.add_argument(
         "--max-chunks",
         type=int,

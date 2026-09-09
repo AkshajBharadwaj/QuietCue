@@ -100,6 +100,15 @@ The touch-driven pattern creator records one to six pulses directly on the
 phone, previews them, validates safe timing bounds, and synchronizes the result
 to the hub and wearable.
 
+## iPhone demo without the wearable
+
+`frontend/ios/` contains a SwiftUI app that plays both roles: the iPhone
+microphone streams to the Mac hub over the same TCP protocol as the Uno Q, the
+iPhone's haptic engine plays the same motor patterns, and every Android
+companion screen (Home, Profiles, Places, My context) is available. Run
+`./scripts/run_ios_demo.sh` on the Mac and open `frontend/ios/QuietCue.xcodeproj`.
+See `frontend/ios/README.md` and `docs/IOS_DEMO_PLAN.md`.
+
 ## The Android companion
 
 The native Android app is the control center for QuietCue:

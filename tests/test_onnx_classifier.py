@@ -11,11 +11,13 @@ try:
 except ModuleNotFoundError as exc:
     raise unittest.SkipTest("numpy and pytest are optional ONNX test dependencies") from exc
 
-from backend.inference.event_mapper import _EVENT_TERMS, _SPEECH_TERMS
+from backend.inference.event_mapper import _EVENT_TERMS, _GENERIC_EVENT_TERMS, _SPEECH_TERMS
 from backend.inference.onnx_sound_classifier import (
     DEFAULT_LABELS_PATH,
     DEFAULT_MODEL_PATH,
+    FLOAT_MODEL_DIR,
     OnnxSoundClassifier,
+    resolve_model_paths,
 )
 
 requires_runtime_and_model = pytest.mark.skipif(
@@ -42,6 +44,42 @@ def test_labels_cover_every_mapped_event():
             term in label for term in terms for label in labels
         ), f"no model label matches event {event!r}"
     assert any(term in label for term in _SPEECH_TERMS for label in labels)
+    for event, terms in _GENERIC_EVENT_TERMS.items():
+        for term in terms:
+            assert term in labels, f"generic term {term!r} for {event!r} is not an exact model label"
+
+
+def test_resolve_model_paths_prefers_float_when_present():
+    model, labels, precision = resolve_model_paths("w8a8")
+    assert (model, labels, precision) == (DEFAULT_MODEL_PATH, DEFAULT_LABELS_PATH, "w8a8")
+    model, labels, precision = resolve_model_paths("float")
+    assert (model, labels, precision) == (
+        FLOAT_MODEL_DIR / "yamnet.onnx",
+        FLOAT_MODEL_DIR / "labels.txt",
+        "float",
+    )
+    auto = resolve_model_paths("auto")
+    assert auto[2] == ("float" if (FLOAT_MODEL_DIR / "yamnet.onnx").is_file() else "w8a8")
+    with pytest.raises(ValueError, match="precision"):
+        resolve_model_paths("int4")
+
+
+@requires_runtime_and_model
+def test_float_export_produces_continuous_confidences():
+    """The w8a8 export collapses scores onto a ladder; float must not."""
+    if not (FLOAT_MODEL_DIR / "yamnet.onnx").is_file():
+        pytest.skip("float model not downloaded (run scripts/fetch_models.sh)")
+    classifier = OnnxSoundClassifier(
+        FLOAT_MODEL_DIR / "yamnet.onnx", FLOAT_MODEL_DIR / "labels.txt", target="cpu"
+    )
+    assert classifier._input_quant is None and classifier._output_quant is None
+    rng = np.random.default_rng(0)
+    seen = set()
+    for _ in range(3):
+        pcm = (rng.standard_normal(16_000) * 2_000).astype("<i2").tobytes()
+        seen.update(round(p.confidence, 3) for p in classifier.classify_pcm16(pcm, 16_000, top_k=10))
+    ladder = {0.0104, 0.022, 0.0459, 0.0931, 0.1798, 0.3189, 0.5, 0.6811, 0.8202}
+    assert len(seen - ladder) > len(seen) // 2
 
 
 def test_cpu_target_does_not_require_quad_client(monkeypatch, tmp_path):

@@ -464,22 +464,30 @@ def _pipeline_factory(
     if classifier == "onnx":
         def create_onnx() -> HubInferencePipeline:
             from backend.inference.onnx_sound_classifier import (
-                DEFAULT_LABELS_PATH,
-                DEFAULT_MODEL_PATH,
                 OnnxSoundClassifier,
+                resolve_model_paths,
             )
 
+            model_path, labels_path, precision = resolve_model_paths(
+                os.environ.get("QUIETCUE_ONNX_PRECISION", "auto")
+            )
             sound_classifier = OnnxSoundClassifier(
-                model_path=os.environ.get("QUIETCUE_ONNX_MODEL", DEFAULT_MODEL_PATH),
-                labels_path=os.environ.get("QUIETCUE_ONNX_LABELS", DEFAULT_LABELS_PATH),
+                model_path=os.environ.get("QUIETCUE_ONNX_MODEL", model_path),
+                labels_path=os.environ.get("QUIETCUE_ONNX_LABELS", labels_path),
                 target=os.environ.get("QUIETCUE_ONNX_TARGET", "auto"),
                 cache_dir=os.environ.get("QUIETCUE_ONNX_CACHE_DIR") or None,
             )
             LOGGER.info(
-                "ONNX classifier active: model=%s provider=%s",
-                sound_classifier.model_path.name,
+                "ONNX classifier active: model=%s precision=%s provider=%s",
+                sound_classifier.model_path,
+                precision,
                 sound_classifier.active_provider,
             )
+            if precision == "w8a8":
+                LOGGER.warning(
+                    "Using the quantized w8a8 YAMNet: confidences are coarse and thresholds "
+                    "between 0.50 and 0.68 cannot be met. Run scripts/fetch_models.sh for float."
+                )
             return build(sound_classifier)
 
         return create_onnx
@@ -593,6 +601,13 @@ def _parse_args() -> argparse.Namespace:
         choices=("demo", "yamnet", "onnx"),
         default=os.environ.get("QUIETCUE_CLASSIFIER", "onnx"),
     )
+    parser.add_argument(
+        "--onnx-precision",
+        choices=("auto", "float", "w8a8"),
+        default=os.environ.get("QUIETCUE_ONNX_PRECISION", "auto"),
+        help="YAMNet ONNX export for --classifier onnx: float gives continuous confidences "
+        "(default auto: float when downloaded, else the checked-in w8a8)",
+    )
     parser.add_argument("--profile", choices=tuple(all_profiles()), default="home")
     parser.add_argument(
         "--speech-model",
@@ -642,6 +657,9 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if not args.pairing_token:
         LOGGER.warning("No pairing token configured; use only on a trusted development network")
+    # The pipeline is built lazily inside the hub; hand the choice over via the
+    # same environment variable the factory reads.
+    os.environ["QUIETCUE_ONNX_PRECISION"] = args.onnx_precision
     try:
         asyncio.run(
             serve(

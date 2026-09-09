@@ -43,3 +43,8 @@ local.properties
 *.iml
 .idea/
 captures/
+
+# Xcode (frontend/ios)
+xcuserdata/
+DerivedData/
+*.xcuserstate

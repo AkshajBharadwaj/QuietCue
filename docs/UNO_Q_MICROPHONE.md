@@ -110,7 +110,7 @@ python3 -m uno_q.linux.transport.hub_client \
   --input-device 'plughw:CARD=Microphone,DEV=0' \
   --pc '<computer-host>:8765' \
   --pairing-token "$QUIETCUE_PAIRING_TOKEN" \
-  --chunk-ms 500 \
+  --chunk-ms 1000 \
   --haptics \
   --compact
 ```

@@ -19,19 +19,36 @@ from pathlib import Path
 
 import numpy as np
 
-from backend.inference.audio_features import waveform_to_patches
+from backend.inference.audio_features import MIN_WAVEFORM_SAMPLES, waveform_to_patches
 from backend.inference.models import SoundPrediction
 
 TARGET_SAMPLE_RATE = 16_000
 LOGGER = logging.getLogger("quietcue.onnx_classifier")
 
 DEFAULT_MODEL_DIR = Path(__file__).resolve().parents[2] / "models"
-DEFAULT_MODEL_PATH = (
-    DEFAULT_MODEL_DIR / "source" / "yamnet-onnx-w8a8" / "yamnet-onnx-w8a8" / "yamnet.onnx"
-)
-DEFAULT_LABELS_PATH = (
-    DEFAULT_MODEL_DIR / "source" / "yamnet-onnx-w8a8" / "yamnet-onnx-w8a8" / "labels.txt"
-)
+W8A8_MODEL_DIR = DEFAULT_MODEL_DIR / "source" / "yamnet-onnx-w8a8" / "yamnet-onnx-w8a8"
+FLOAT_MODEL_DIR = DEFAULT_MODEL_DIR / "source" / "yamnet-onnx-float" / "yamnet-onnx-float"
+# The w8a8 export is checked in; the float export (15 MB) is fetched by
+# scripts/fetch_models.sh. Both share the same label order.
+DEFAULT_MODEL_PATH = W8A8_MODEL_DIR / "yamnet.onnx"
+DEFAULT_LABELS_PATH = W8A8_MODEL_DIR / "labels.txt"
+PRECISIONS = ("auto", "float", "w8a8")
+
+
+def resolve_model_paths(precision: str = "auto") -> tuple[Path, Path, str]:
+    """Pick the YAMNet export to load: (model_path, labels_path, precision).
+
+    "float" is preferred on a hub with CPU headroom: the w8a8 export's output
+    quantization step (~0.76 logits) collapses post-sigmoid confidences onto a
+    ladder (0.32 / 0.50 / 0.68 / 0.82 ...), so profile thresholds in between
+    are unreachable. "auto" uses float when it has been downloaded, else w8a8.
+    """
+    if precision not in PRECISIONS:
+        raise ValueError(f"Unknown precision {precision!r}; expected one of {PRECISIONS}")
+    float_model = FLOAT_MODEL_DIR / "yamnet.onnx"
+    if precision == "float" or (precision == "auto" and float_model.is_file()):
+        return float_model, FLOAT_MODEL_DIR / "labels.txt", "float"
+    return DEFAULT_MODEL_PATH, DEFAULT_LABELS_PATH, "w8a8"
 
 
 class OnnxSoundClassifier:
@@ -51,6 +68,7 @@ class OnnxSoundClassifier:
                 "Run scripts/fetch_models.ps1 to download it."
             )
         self._class_names = self._load_labels(Path(labels_path))
+        self._warned_short_chunk = False
         self.target = target
         self._session = self._create_session(target, cache_dir)
         self.active_provider = self._session.get_providers()[0]
@@ -153,6 +171,14 @@ class OnnxSoundClassifier:
         if top_k < 1:
             raise ValueError("top_k must be at least 1")
 
+        if waveform.size < MIN_WAVEFORM_SAMPLES and not self._warned_short_chunk:
+            self._warned_short_chunk = True
+            LOGGER.warning(
+                "Chunk of %d samples is shorter than one %d-sample patch; it is zero-padded, "
+                "which dilutes confidences. Stream chunks of at least 1 s.",
+                waveform.size,
+                MIN_WAVEFORM_SAMPLES,
+            )
         patches = waveform_to_patches(waveform)
         logits = np.vstack(
             [
